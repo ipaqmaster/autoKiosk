@@ -1,0 +1,9 @@
+{
+  "credentials": {
+    "username": "siteLoginUsername",
+    "passwordBase64": "siteLoginPasswordAsBase64=="
+  },
+  "urls": [
+    "https://myURL"
+  ]
+}
