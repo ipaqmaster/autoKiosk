@@ -133,7 +133,13 @@ exec 1>${logFile} 2>&1
 # | |\/| |/ _` | | '_ \
 # | |  | | (_| | | | | |
 # |_|  |_|\__,_|_|_| |_|
-#
+
+
+if [ -z "$DISPLAY" ]
+then
+  echo "\$DISPLAY NOT SET!"
+  exit 1
+fi
 
   # Disable display sleeping
 xset s noblank
