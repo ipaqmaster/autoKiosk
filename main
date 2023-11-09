@@ -54,7 +54,6 @@ function waitChromiumLogActivity {
 }
 
 function waitChromiumLogSilence {
-  sleep 1 && return
   echo "Waiting for Chromium log file to stop logging..."
   tail -f ${logFileChromium} | while read -t5 logLine; do : ; done
   echo "Done."
