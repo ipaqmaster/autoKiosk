@@ -169,7 +169,6 @@ isRaspberryPi && x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
 pkill -f -9 chromium
 chromium --kiosk --incognito --enable-logging=stderr --v=1 ${URLs[0]} >${logFileChromium} 2>&1 &
 chromiumPid=$!
-#chromium --kiosk --incognito --enable-logging=stderr --v=1 ${URLs[0]} >${logFileChromium} 2>&1 &
 
 waitChromiumLogActivity # Wait for chromium logs to start writing
 waitChromiumLogSilence  # Wait for chromium logs to become silent indicating no activity.
