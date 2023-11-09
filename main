@@ -4,6 +4,11 @@ _scriptName="$(basename ${_scriptRoot})"
 pushd ${_scriptRoot}
 trap 'exit 1' EXIT HUP INT TERM
 
+for program in chromium xdotool unclutter
+do
+  which $program >/dev/null 2>&1|| { echo missing $program ; exit;}
+done
+
 #  _____                 _   _
 # |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
 # | |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|
