@@ -166,7 +166,7 @@ isRaspberryPi && x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
 
   # Start chromium
 pkill -f -9 chromium
-chromium --disk-cache-dir ${TMPDIR} --kiosk --incognito --enable-logging=stderr --v=1 ${URLs[0]} >${logFileChromium} 2>&1 &
+chromium --disk-cache-dir=${TMPDIR} --kiosk --incognito --enable-logging=stderr --v=1 ${URLs[0]} >${logFileChromium} 2>&1 &
 chromiumPid=$!
 
 waitChromiumLogActivity # Wait for chromium logs to start writing
@@ -174,14 +174,14 @@ waitChromiumLogSilence  # Wait for chromium logs to become silent indicating no 
 loginHandler # Handle logins
 waitChromiumLogSilence # Wait for the logs to calm down again
 
-if [ -n "${URLs[@]:1}" ]
+if [ ${#URLs[@]} -gt 1 ]
 then
   echo "There are more URLs in our list. Opening the rest of the URLs."
   for url in ${URLs[@]:1}
   do
     ((count++))
     echo "${count}..."
-    chromium --disk-cache-dir ${TMPDIR} --kiosk --incognito "${url}"
+    chromium --disk-cache-dir=${TMPDIR} --kiosk --incognito "${url}"
     sleep 1
   done
   echo "Opened all URLs."
