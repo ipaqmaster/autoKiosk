@@ -176,7 +176,7 @@ waitChromiumLogSilence # Wait for the logs to calm down again
 
 
 echo "Opening the remainder of the URLs"
-chromium --incognito ${URLs[@]:1}
+chromium --kiosk --incognito ${URLs[@]:1}
 
 waitChromiumLogSilence # Wait for the logs to calm down again
 closeFirstTab
