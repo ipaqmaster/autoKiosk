@@ -174,9 +174,19 @@ waitChromiumLogSilence  # Wait for chromium logs to become silent indicating no 
 loginHandler # Handle logins
 waitChromiumLogSilence # Wait for the logs to calm down again
 
+if [ -n "${URLs[@]:1}" ]
+then
+  echo "There are more URLs in our list. Opening the rest of the URLs."
+  for url in ${URLs[@]:1}
+  do
+    ((count++))
+    echo "${count}..."
+    chromium --disk-cache-dir ${TMPDIR} --kiosk --incognito "${url}"
+    sleep 1
+  done
+  echo "Opened all URLs."
+fi
 
-echo "Opening the remainder of the URLs"
-chromium --kiosk --incognito ${URLs[@]:1}
 
 waitChromiumLogSilence # Wait for the logs to calm down again
 closeFirstTab
