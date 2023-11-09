@@ -167,7 +167,7 @@ isRaspberryPi && x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
 
   # Start chromium
 pkill -f -9 chromium
-chromium --incognito --enable-logging=stderr --v=1 ${URLs[0]} >${logFileChromium} 2>&1 &
+chromium --kiosk --incognito --enable-logging=stderr --v=1 ${URLs[0]} >${logFileChromium} 2>&1 &
 chromiumPid=$!
 #chromium --kiosk --incognito --enable-logging=stderr --v=1 ${URLs[0]} >${logFileChromium} 2>&1 &
 
