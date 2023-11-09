@@ -112,7 +112,7 @@ if isTmpfs /tmp
 then
   echo "Using /tmp tmpfs"
   TMPDIR=/tmp
-elif isTmpfs "${XDG_RUNTIME_DIR}"
+elif [ -n "${XDG_RUNTIME_DIR}" ] && isTmpfs "${XDG_RUNTIME_DIR}"
 then
   echo "Using ${XDG_RUNTIME_DIR} tmpfs"
   TMPDIR=${XDG_RUNTIME_DIR}
