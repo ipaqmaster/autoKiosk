@@ -1,6 +1,8 @@
 #!/bin/bash
 _scriptRoot="$(dirname $(realpath $0))"
 _scriptName="$(basename ${_scriptRoot})"
+secondsBetweenPages=15
+
 pushd ${_scriptRoot}
 trap 'exit 1' EXIT HUP INT TERM
 
@@ -99,7 +101,7 @@ function cycleTabsIndefinitely {
   echo "Cycling tabs until chromium exits."
   while [ -d /proc/${chromiumPid} ]
   do
-    sleep 1 # Sleeping first to stay on initial page for 15 as well.
+    sleep ${secondsBetweenPages} # Sleeping first to stay on initial page for 15 as well.
     xdotool search --onlyvisible --class Chromium key --clearmodifiers ctrl+Tab
   done
 
