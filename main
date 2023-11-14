@@ -21,7 +21,7 @@ done
 function isRaspberryPi {
   [ -n "$isRaspberryPi" ] && return $isRaspberryPi
 
-  if grep -i 'raspberry' /sys/firmware/devicetree/base/model
+  if grep -aiqs 'raspberry' /sys/firmware/devicetree/base/model
   then
     isRaspberryPi=0 # true
   else
