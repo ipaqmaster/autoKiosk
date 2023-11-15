@@ -60,7 +60,11 @@ function waitChromiumLogSilence {
 }
 
 function loginHandler {
-  chromiumWindowTitle="$(xdotool search --onlyvisible --class 'Chromium' getwindowname)"
+  while [ -z "${chromiumWindowTitle}" ]
+  do
+    chromiumWindowTitle="$(xdotool search --onlyvisible --class 'Chromium' getwindowname)"
+    [ -z "${chromiumWindowTitle}" ] && echo "Chromium window title is blank... retrying window title get..."
+  done
 
   case "${chromiumWindowTitle}" in
     *"Logicmonitor Hosted Monitoring System"*)
@@ -88,7 +92,9 @@ function closeTabNumber { # Could Alt+1 then Ctrl+Tab [x] times and Ctrl+W the r
   tabNumber="$1"
     if [[ $1 =~ ^[0-9]$ ]]
     then
+      echo "Closing tab: $1..."
       xdotool search --onlyvisible --class Chromium key --delay 1000 --clearmodifiers Alt+${tabNumber} Ctrl+w
+      echo "Done."
     else
       echo "Tab number must be 0-9 for alt+# sequence."
     fi
@@ -107,6 +113,26 @@ function cycleTabsIndefinitely {
   echo "Chromium has died [${chromiumPid}]. Exiting."
 }
 
+function siteHandler {
+  case "${URLs[0]}" in
+    *"logicmonitor.com"*)
+      loginPageTitle="Logicmonitor Hosted Monitoring System - Chromium"
+      echo "Waiting for page to finish loading..."
+      until [[ "$(xdotool search --onlyvisible --class 'Chromium' getwindowname)" == "${loginPageTitle}" ]] ; do sleep 1 ; done
+      echo "Detected Logicmonitor login page. Logging in."
+      xdotool search --onlyvisible --class Chromium type "$username"
+      xdotool search --onlyvisible --class Chromium key Tab
+      xdotool search --onlyvisible --class Chromium type "$(base64 -d <<< $passwordBase64)"
+      xdotool search --onlyvisible --class Chromium key Return
+      echo "Waiting for next page to finish loading..."
+      until [[ "$(xdotool search --onlyvisible --class 'Chromium' getwindowname)" != "${loginPageTitle}" ]] ; do sleep 1 ; done
+      ;;
+    *)
+      echo "Unsure how to handle logins for page: \'${chromiumWindowTitle}\'. Ignoring."
+      ;;
+  esac
+}
+
 if isTmpfs /tmp
 then
   echo "Using /tmp tmpfs"
@@ -123,9 +149,9 @@ logFileChromium="${TMPDIR}/${_scriptName}.chromium.log"
 logFile="${TMPDIR}/${_scriptName}.log"
 echo "See log file: $logFile for script output"
 
-exec 3>&1 4>&2
-trap 'exec 2>&4 1>&3' 0 1 2 3
-exec 1>${logFile} 2>&1
+#exec 3>&1 4>&2
+#trap 'exec 2>&4 1>&3' 0 1 2 3
+#exec 1>${logFile} 2>&1
 
 #  __  __       _
 # |  \/  | __ _(_)_ __
@@ -169,10 +195,12 @@ pkill -f -9 chromium
 chromium --disk-cache-dir=${TMPDIR} --kiosk --incognito --enable-logging=stderr --v=1 ${URLs[0]} >${logFileChromium} 2>&1 &
 chromiumPid=$!
 
-waitChromiumLogActivity # Wait for chromium logs to start writing
-waitChromiumLogSilence  # Wait for chromium logs to become silent indicating no activity.
-loginHandler # Handle logins
-waitChromiumLogSilence # Wait for the logs to calm down again
+siteHandler # Trying a per-site login handling method. May not work if the title renders before the page on a Pi...
+
+#waitChromiumLogActivity # Wait for chromium logs to start writing
+#waitChromiumLogSilence  # Wait for chromium logs to become silent indicating no activity.
+#loginHandler # Handle logins
+#waitChromiumLogSilence # Wait for the logs to calm down again
 
 if [ ${#URLs[@]} -gt 1 ]
 then
@@ -188,7 +216,7 @@ then
 fi
 
 
-waitChromiumLogSilence # Wait for the logs to calm down again
+#waitChromiumLogSilence # Wait for the logs to calm down again
 closeFirstTab
 
 cycleTabsIndefinitely
