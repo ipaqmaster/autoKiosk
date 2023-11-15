@@ -119,6 +119,7 @@ function siteHandler {
       loginPageTitle="Logicmonitor Hosted Monitoring System - Chromium"
       echo "Waiting for page to finish loading..."
       until [[ "$(xdotool search --onlyvisible --class 'Chromium' getwindowname)" == "${loginPageTitle}" ]] ; do sleep 1 ; done
+      sleep 5 # Let the page finish drawing
       echo "Detected Logicmonitor login page. Logging in."
       xdotool search --onlyvisible --class Chromium type "$username"
       xdotool search --onlyvisible --class Chromium key Tab
@@ -126,6 +127,7 @@ function siteHandler {
       xdotool search --onlyvisible --class Chromium key Return
       echo "Waiting for next page to finish loading..."
       until [[ "$(xdotool search --onlyvisible --class 'Chromium' getwindowname)" != "${loginPageTitle}" ]] ; do sleep 1 ; done
+      sleep 5 # Let the page finish drawing
       ;;
     *)
       echo "Unsure how to handle logins for page: \'${chromiumWindowTitle}\'. Ignoring."
@@ -149,9 +151,9 @@ logFileChromium="${TMPDIR}/${_scriptName}.chromium.log"
 logFile="${TMPDIR}/${_scriptName}.log"
 echo "See log file: $logFile for script output"
 
-#exec 3>&1 4>&2
-#trap 'exec 2>&4 1>&3' 0 1 2 3
-#exec 1>${logFile} 2>&1
+exec 3>&1 4>&2
+trap 'exec 2>&4 1>&3' 0 1 2 3
+exec 1>${logFile} 2>&1
 
 #  __  __       _
 # |  \/  | __ _(_)_ __
@@ -189,6 +191,10 @@ tabbingInterval=$(jq -r '.settings.tabbingInterval' config.json)
   # Start an x11vnc instance for debugging
 isRaspberryPi && pkill -f -9 x11vnc
 isRaspberryPi && x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
+
+  # Force 1080p
+isRaspberryPi && xrandr --output HDMI-1 --mode 1920x1080
+isRaspberryPi && xrandr --output HDMI-2 --mode 1920x1080
 
   # Start chromium
 pkill -f -9 chromium
