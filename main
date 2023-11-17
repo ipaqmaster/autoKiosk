@@ -67,7 +67,7 @@ function cycleTabsIndefinitely {
   echo "Cycling tabs until chromium exits."
   while [ -d /proc/${chromiumPid} ]
   do
-    sleep ${secondsBetweenPages} # Sleeping first to stay on initial page for 15 as well.
+    sleep ${tabbingInterval} # Sleeping first to stay on initial page for 15 as well.
     xdotool search --onlyvisible --class Chromium key --clearmodifiers ctrl+Tab
   done
 
