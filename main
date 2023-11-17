@@ -40,6 +40,7 @@ function isRaspberryPi {
   else
     isRaspberryPi=1 # false
   fi
+
 }
 
 function isTmpfs {
@@ -48,69 +49,16 @@ function isTmpfs {
   return $?
 }
 
-function waitChromiumLogActivity {
-  timer=0 ; timeout=30
-  while [ ! -s ${logFileChromium} ] && [ $timer -lt $timeout ]
-  do
-    sleep 1
-    echo "Waiting for chromium to fire up..."
-    ((timer++))
-  done
-
-  if [ $timer -eq $timeout ]
-  then
-    echo "Timed out waiting for chromium log activity."
-    return 1
-  else
-    return 0
-  fi
-}
-
-function waitChromiumLogSilence {
-  echo "Waiting for Chromium log file to stop logging..."
-  tail -f ${logFileChromium} | while read -t5 logLine; do : ; done
-  echo "Done."
-}
-
-function loginHandler {
-  while [ -z "${chromiumWindowTitle}" ]
-  do
-    chromiumWindowTitle="$(xdotool search --onlyvisible --class 'Chromium' getwindowname)"
-    [ -z "${chromiumWindowTitle}" ] && echo "Chromium window title is blank... retrying window title get..."
-  done
-
-  case "${chromiumWindowTitle}" in
-    *"Logicmonitor Hosted Monitoring System"*)
-      echo "Detected Logicmonitor login page. Logging in."
-      xdotool search --onlyvisible --class Chromium type "$username"
-      xdotool search --onlyvisible --class Chromium key Tab
-      xdotool search --onlyvisible --class Chromium type "$(base64 -d <<< $passwordBase64)"
-      xdotool search --onlyvisible --class Chromium key Return
-      ;;
-    *)
-      echo "Unsure how to handle logins for page: \'${chromiumWindowTitle}\'. Ignoring."
-      ;;
-  esac
-
-  waitChromiumLogSilence
-  if [[ "${chromiumWindowTitle}" != "$(xdotool search --onlyvisible --class 'Chromium' getwindowname)" ]]
-  then
-    echo "We have advanced from the login page..."
-  else
-    echo "Login may have failed..."
-  fi
-}
-
 function closeTabNumber { # Could Alt+1 then Ctrl+Tab [x] times and Ctrl+W the resulting tab.
   tabNumber="$1"
-    if [[ $1 =~ ^[0-9]$ ]]
-    then
-      echo "Closing tab: $1..."
-      xdotool search --onlyvisible --class Chromium key --delay 1000 --clearmodifiers Alt+${tabNumber} Ctrl+w
-      echo "Done."
-    else
-      echo "Tab number must be 0-9 for alt+# sequence."
-    fi
+  if [[ $1 =~ ^[0-9]$ ]]
+  then
+    echo "Closing tab: $1..."
+    xdotool search --onlyvisible --class Chromium key --delay 1000 --clearmodifiers Alt+${tabNumber} Ctrl+w
+    echo "Done."
+  else
+    echo "Tab number must be 0-9 for alt+# sequence."
+  fi
 }
 
 function closeFirstTab { closeTabNumber 1 ;}
