@@ -13,6 +13,17 @@ do
   which $program >/dev/null 2>&1|| { echo missing $program ; exit;}
 done
 
+while [ $# -gt 0 ]
+do
+  case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
+    -force) 
+      echo "Forcing Pi-only commands to run."
+      isRaspberryPi=0 # returncode 0 = true
+      ;;    
+  esac
+  shift
+done
+
 #  _____                 _   _
 # |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
 # | |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|
