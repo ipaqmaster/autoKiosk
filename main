@@ -2,6 +2,8 @@
 _scriptRoot="$(dirname $(realpath $0))"
 _scriptName="$(basename ${_scriptRoot})"
 secondsBetweenPages=15
+x=1920
+y=1080
 
 pushd ${_scriptRoot}
 trap 'exit 1' EXIT HUP INT TERM
@@ -193,8 +195,8 @@ isRaspberryPi && pkill -f -9 x11vnc
 isRaspberryPi && x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
 
   # Force 1080p
-isRaspberryPi && xrandr --output HDMI-1 --mode 1920x1080
-isRaspberryPi && xrandr --output HDMI-2 --mode 1920x1080
+isRaspberryPi && xrandr --output HDMI-1 --mode ${x}x${y}
+isRaspberryPi && xrandr --output HDMI-2 --mode ${x}x${y}
 
   # Start chromium
 pkill -f -9 chromium
