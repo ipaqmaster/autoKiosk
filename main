@@ -108,10 +108,10 @@ else
   echo "MISSING TMPFS MOUNT. USING /tmp BUT MAY IMPACT SD LIFESPAN."
 fi
 
-logFileChromium="${TMPDIR}/${_scriptName}.chromium.log"
 logFile="${TMPDIR}/${_scriptName}.log"
 echo "See log file: $logFile for script output"
 
+# Log to file
 exec 3>&1 4>&2
 trap 'exec 2>&4 1>&3' 0 1 2 3
 exec 1>${logFile} 2>&1
@@ -138,52 +138,76 @@ xset -dpms
 pkill -f -9 unclutter
 unclutter -idle 0.5 -root &
 
-  # Get variables
-eval $(jq -r '.credentials | to_entries | .[] | .key + "=" + (.value | @sh)' config.json)
-URLs=($(jq -r '.urls[] | @text' config.json))
-tabbingInterval=$(jq -r '.settings.tabbingInterval' config.json)
-
-[ -z "$username" ]        && echo need username        && exit 1
-[ -z "$passwordBase64" ]  && echo need passwordBase64  && exit 1
-[ -z "$URLs" ]            && echo need URLs            && exit 1
-[ -z "$tabbingInterval" ] && echo need tabbingInterval && exit 1
-
+  connectedDisplays=($(xrandr|grep -E ' connected.*' | cut -d' ' -f1))
 
   # Start an x11vnc instance for debugging
-isRaspberryPi && pkill -f -9 x11vnc
-isRaspberryPi && x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
+  isRaspberryPi && pkill -f -9 x11vnc
+  isRaspberryPi && x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
 
   # Force 1080p
-isRaspberryPi && xrandr --output HDMI-1 --mode ${x}x${y}
-isRaspberryPi && xrandr --output HDMI-2 --mode ${x}x${y}
-
-  # Start chromium
-pkill -f -9 chromium
-chromium --disk-cache-dir=${TMPDIR} --kiosk --incognito --enable-logging=stderr --v=1 ${URLs[0]} >${logFileChromium} 2>&1 &
-chromiumPid=$!
-
-siteHandler # Trying a per-site login handling method. May not work if the title renders before the page on a Pi...
-
-#waitChromiumLogActivity # Wait for chromium logs to start writing
-#waitChromiumLogSilence  # Wait for chromium logs to become silent indicating no activity.
-#loginHandler # Handle logins
-#waitChromiumLogSilence # Wait for the logs to calm down again
-
-if [ ${#URLs[@]} -gt 1 ]
-then
-  echo "There are more URLs in our list. Opening the rest of the URLs."
-  for url in ${URLs[@]:1}
+  for display in ${connectedDisplays[@]}
   do
-    ((count++))
-    echo "${count}..."
-    chromium --disk-cache-dir=${TMPDIR} --kiosk --incognito "${url}"
-    sleep 1
+    echo "Configuring ${display}"
+    if [ -n "${previousDisplay}" ]
+    then
+      alignmentArgs="--right-of ${previousDisplay}"
+    fi
+    isRaspberryPi && echo xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}
+    isRaspberryPi && xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}
+
+
+    previousDisplay=${display}
   done
-  echo "Opened all URLs."
-fi
 
 
-#waitChromiumLogSilence # Wait for the logs to calm down again
+  # Load global configuration
+  eval $(jq -r '.credentials | to_entries | .[] | .key + "=" + (.value | @sh)' config.json)
+  eval $(jq -r '.settings    | to_entries | .[] | .key + "=" + (.value | @sh)' config.json)
+  configuredDisplays=($(jq -rc '.displays | keys | join(" ")' config.json))
+  globalPassword="$(base64 -d <<< ${globalPasswordBase64})"
+
+  [ -z "$globalUsername" ]     && echo need username             && exit 1
+  [ -z "$globalPassword" ]     && echo need globalPasswordBase64 && exit 1
+  [ -z "$configuredDisplays" ] && echo need displays             && exit 1
+  [ -z "$tabbingInterval" ]    && echo need tabbingInterval      && exit 1
+
+# Ensure no chromium processes are running
+pkill -f -9 chromium
+
+# Emumerate displays
+for configuredDisplay in ${configuredDisplays[@]}
+do
+  if [ -z "${connectedDisplays[${configuredDisplay}]}" ]
+  then
+    echo "There doesn't seem to be a display conncted for configuredDisplay ${configuredDisplay}"
+    continue
+  fi
+
+  echo "Preparing: $configuredDisplay"
+  #URLs=($(jq -r '.urls[] | @text' config.json))
+
+  # Start an instance of chromium on the appropriate display
+  xOffset=$(((${x} * $(((${configuredDisplay}))))))
+      URLs=($(jq -r ".displays.\"${configuredDisplay}\".urls| join(\" \")" config.json))
+  username="$(jq -r ".displays.\"${configuredDisplay}\".username" config.json)"
+  password="$(jq -r ".displays.\"${configuredDisplay}\".password" config.json)"
+  [ -z "$username" ] && username="${globalUsername}"
+  [ -z "$username" ] || [[ "$username" == null ]] && username="${globalUsername}"
+  [ -z "$password" ] || [[ "$password" == null ]] && password="${globalPassword}"
+  chromium --disk-cache-dir=${TMPDIR} --user-data-dir=/tmp/${configuredDisplay} --window-position=${xOffset},0 --kiosk --incognito "${URLs[0]}" >/dev/null 2>&1 &
+  siteHandler ${URLs[0]}
+
+  if [ ${#URLs[@]} -gt 1 ]
+  then
+    echo "Opening the remainder of the URLs for this instance."
+    chromium --disk-cache-dir=${TMPDIR} --user-data-dir=/tmp/${configuredDisplay} --kiosk --incognito ${URLs[@]:1} >/dev/null 2>&1 &
+  else
+    echo "No additional URLs to open for this instance."
+  fi
+
+  echo "Display ${configuredDisplay} done."
+done
+
 closeFirstTab
 
 cycleTabsIndefinitely
