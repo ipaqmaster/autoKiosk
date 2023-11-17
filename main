@@ -126,18 +126,18 @@ function cycleTabsIndefinitely {
   echo "Chromium has died [${chromiumPid}]. Exiting."
 }
 
-function siteHandler {
+function siteHandler { # Knows how to log into different websites
   case "${URLs[0]}" in
     *"logicmonitor.com"*)
       loginPageTitle="Logicmonitor Hosted Monitoring System - Chromium"
       echo "Waiting for page to finish loading..."
-      until [[ "$(xdotool search --onlyvisible --class 'Chromium' getwindowname)" == "${loginPageTitle}" ]] ; do sleep 1 ; done
+      until [[ "$(xdotool getactivewindow getwindowname)" == "${loginPageTitle}" ]] ; do sleep 1 ; done
       sleep 5 # Let the page finish drawing
       echo "Detected Logicmonitor login page. Logging in."
-      xdotool search --onlyvisible --class Chromium type "$username"
-      xdotool search --onlyvisible --class Chromium key Tab
-      xdotool search --onlyvisible --class Chromium type "$(base64 -d <<< $passwordBase64)"
-      xdotool search --onlyvisible --class Chromium key Return
+      xdotool getactivewindow type "${username}"
+      xdotool getactivewindow key Tab
+      xdotool getactivewindow type "${password}"
+      xdotool getactivewindow key Return
       echo "Waiting for next page to finish loading..."
       until [[ "$(xdotool search --onlyvisible --class 'Chromium' getwindowname)" != "${loginPageTitle}" ]] ; do sleep 1 ; done
       sleep 5 # Let the page finish drawing
