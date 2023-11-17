@@ -282,7 +282,6 @@ do
   fi
 
   echo "Preparing: $configuredDisplay"
-  #URLs=($(jq -r '.urls[] | @text' config.json))
 
   # Start an instance of chromium on the appropriate display
   xOffset=$(((${x} * $(((${configuredDisplay}))))))
