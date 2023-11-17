@@ -1,9 +1,31 @@
 {
-  "credentials": {
-    "username": "siteLoginUsername",
-    "passwordBase64": "siteLoginPasswordAsBase64=="
+  "settings": {
+    "tabbingInterval": 15
   },
-  "urls": [
-    "https://myURL"
-  ]
+  "credentials": {
+    "globalUsername": "GlobalDefaultusername",
+    "globalPasswordBase64": "base64OfGlobalDefaultPassword=="
+  },
+  "displays": {
+    "0": {
+      "username": "Display01Username",
+      "urls": [
+        "https://aSite.com/page"
+        "https://aSite.com/logins/willBe/handled/onThe/First/page"
+      ]
+    },
+    "1": {
+      "username": "Display02Username",
+      "urls": [
+        "https://someothersite.com/page"
+      ]
+    },
+    "2": {
+      "username": "Display03Username",
+      "urls": [
+        "https://somesite.com/page"
+        "https://somesite.com/page2"
+      ]
+    }
+  }
 }
