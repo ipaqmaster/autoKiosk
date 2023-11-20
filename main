@@ -1,34 +1,42 @@
 #!/bin/bash
+_scriptPath=$(realpath $0)
 _scriptRoot="$(dirname $(realpath $0))"
 _scriptName="$(basename ${_scriptRoot})"
+_scriptPid=$$
+
 x=1920
 y=1080
-
-pushd ${_scriptRoot}
-trap 'exit 1' EXIT HUP INT TERM
-
-for program in chromium xdotool unclutter
-do
-  which $program >/dev/null 2>&1|| { echo missing $program ; exit;}
-done
-
-while [ $# -gt 0 ]
-do
-  case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
-    -force) 
-      echo "Forcing Pi-only commands to run."
-      isPiCheckReturnCode=0
-      ;;    
-  esac
-  shift
-done
 
 #  _____                 _   _
 # |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
 # | |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|
 # |  _|| |_| | | | | (__| |_| | (_) | | | \__ \
 # |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
-#
+
+function log {
+  if [ "$2" == 'stderr' ]
+  then
+    echo -e "$1" >&2
+  else
+    echo -e "$1"
+  fi
+
+  # Determine log location
+  if [ -z "${logFile}" ]
+  then
+    if [ -z "${TMPDIR}" ]
+    then
+      logFile=${_scriptPath}.log
+    else
+      logFile=${TMPDIR}/${_scriptName}.log
+    fi
+
+    echo "Using logFile path: ${logFile}"
+  fi
+
+  # Always log
+  echo -e "$1" >> ${logFile}
+}
 
 function isPiCheckReturnCode {
   [ -n "$isPiCheckReturnCode" ] && return $isPiCheckReturnCode
@@ -38,8 +46,8 @@ function isPiCheckReturnCode {
     isPiCheckReturnCode=0 # true
   else
     isPiCheckReturnCode=1 # false
-    echo "Host does not appear to be a Raspberry Pi. Avoiding special commands intended for production use."
-    echo "Specify -force to bypass this check for use on non-pi systems."
+    log "Host does not appear to be a Raspberry Pi. Avoiding special commands intended for production use."
+    log "Specify -force to bypass this check for use on non-pi systems."
   fi
 }
 
@@ -55,7 +63,7 @@ function isPiCheckReturnCodeHardware {
 }
 
 function isTmpfs {
-  [ -z "${1}" ] && echo no arg given && return 1
+  [ -z "${1}" ] && log "no arg given" && return 1
   [[ "$(df -h --output=fstype "${1}" 2>&1 | tail -n1)" == "tmpfs" ]]
   return $?
 }
@@ -64,81 +72,125 @@ function closeTabNumber { # Could Alt+1 then Ctrl+Tab [x] times and Ctrl+W the r
   tabNumber="$1"
   if [[ $1 =~ ^[0-9]$ ]]
   then
-    echo "Closing tab: $1..."
+    log "Closing tab: $1..."
     xdotool getactivewindow key --clearmodifiers --delay 1000 Alt+${tabNumber} Ctrl+w
-    echo "Done."
+    log "Done."
   else
-    echo "Tab number must be 0-9 for alt+# sequence."
+    log "Tab number must be 0-9 for alt+# sequence."
   fi
 }
 
 function closeFirstTab { closeTabNumber 1 ;}
 
-function endGraphicalSession {
-  case $XDG_SESSION_DESKTOP in
-    xfce)
-      xfce4-session-logout
-    ;;
-    gnome)
-      gnome-session-quit
-    ;;
-    *)
-      echo "Unsure how to exit $XDG_SESSION_DESKTOP"
-    ;;
-    esac
+function watchForDisplayCountChange { # Returns on display count change.
+	while checkConnectedDisplaysActiveCountDifference
+	do
+	  sleep 1
+	done
+}
 
+function endGraphicalSessionOnDisplayCountChange {
+  log "Trigger active: Will attempt to restart DM on display count change."
+    watchForDisplayCountChange
+    log "Active = $(getConnectedDisplaysActiveCount), initial = ${#connectedDisplaysActive[@]}"
+    log "The display count has changed."
+    endGraphicalSession
+}
+
+function endGraphicalSession {
+  isPiCheckReturnCode || { log "Not ending graphical session. Not Pi." ; return ;}
+
+  log "Ending graphical session."
+  sudo systemctl restart display-manager # Simplified. Sudo access required.
+  exit 1
+#  case $XDG_SESSION_DESKTOP in
+#    xfce)
+#      xfce4-session-logout
+#      exit 1
+#      ;;
+#    gnome)
+#      gnome-session-quit
+#      exit 1
+#      ;;
+#    *)
+#      log "Unsure how to exit $XDG_SESSION_DESKTOP"
+#      ;;
+#  esac
 }
 
 function cycleTabsIndefinitely {
-  echo "Cycling tabs until the chromium processes have exited..."
+  log "Cycling tabs until there are no chromium processes or our display count changes..."
 
   while pgrep chromium >/dev/null 2>&1
   do
-    for configuredDisplayIndex in ${!configuredDisplays[@]}
-    do
-      targetPid=${connectedDisplaysChromiumPids[${configuredDisplayIndex}]}
 
-      if [ -d "/proc/" ]
+      # Only enumerate active displays
+    for activeDisplayIndex in ${!connectedDisplaysActive[@]}
+    do
+      targetPid=${connectedDisplaysActiveChromiumPids[${activeDisplayIndex}]}
+
+      if [ -z "$targetPid" ]
       then
-          # Ignore displays which don't have more than a single URL
-        if [ $(jq -r ".displays.\"${configuredDisplayIndex}\".urls | length" config.json) -gt 1 ] 
+        log "Failed to get pid for activeDisplayIndex ${activeDisplayIndex}"
+      fi
+
+      if [ -d /proc/${targetPid} ]
+      then
+        # Ignore displays which don't have more than a single URL
+        if [ $(jq -r ".displays.\"${activeDisplayIndex}\".urls | length" config.json) -gt 1 ] 
         then
-	  windowId=$(xdotool search --pid ${targetPid} --onlyvisible | tail -n1)
-	  xdotool windowactivate ${windowId}
-	  xdotool key --clearmodifiers --window ${windowId} ctrl+Tab
-	fi
+          windowId=$(xdotool search --pid ${targetPid} --onlyvisible | tail -n1)
+          xdotool windowactivate ${windowId}
+          xdotool key --clearmodifiers --window ${windowId} ctrl+Tab
+        fi
       else
-        echo "Chromium for monitor ${configuredDisplayIndex} has died [${targetPid}]."
-	echo "Ending session to attempt recovery."
-	endGraphicalSession
+        log "Chromium for monitor ${activeDisplayIndex} has died [${targetPid}]."
+        log "Ending session to attempt recovery."
+        endGraphicalSession
       fi
     done
 
     sleep ${tabbingInterval} # Sleeping first to stay on initial page for same delay too.
   done
+
+  # Relog if our chromium processes have gone missing
+  if pgrep chromium >/dev/null 2>&1
+  then
+    log "It seems the chromium processes have disappeared."
+    log "Ending session to attempt recovery."
+    endGraphicalSession
+  fi
 }
 
 function siteHandler { # Knows how to log into different websites
   case "${URLs[0]}" in
     *"logicmonitor.com"*)
       loginPageTitle="Logicmonitor Hosted Monitoring System - Chromium"
-      echo "Waiting for page to finish loading..."
+      log "Waiting for page to finish loading..."
       until [[ "$(xdotool getactivewindow getwindowname)" == "${loginPageTitle}" ]] ; do sleep 0.5 ; done
       isPiCheckReturnCodeHardware && sleep 5 || sleep 1 # If Pi let the page finish drawing.
-      echo "Detected Logicmonitor login page. Logging in."
+      log "Detected Logicmonitor login page. Logging in."
       xdotool getactivewindow type --clearmodifiers "${username}"
       xdotool getactivewindow key  --clearmodifiers Tab
       xdotool getactivewindow type --clearmodifiers "${password}"
       xdotool getactivewindow key  --clearmodifiers Return
-      echo "Waiting for next page to finish loading..."
+      log "Waiting for next page to finish loading..."
       until [[ "$(xdotool getactivewindow getwindowname)" != "${loginPageTitle}" ]] ; do sleep 1 ; done
       isPiCheckReturnCodeHardware && sleep 5 || sleep 1 # If Pi let the page finish drawing.
       ;;
     *)
-      echo "Unsure how to handle logins for page: \'${chromiumWindowTitle}\'. Ignoring."
+      log "Unsure how to handle logins for page: \'${chromiumWindowTitle}\'. Ignoring."
       ;;
   esac
 }
+
+function getConnectedDisplays       { xrandr|grep -E ' connected.*'   | cut -d' ' -f1 ;}
+function getConnectedDisplaysCount  { wc -w <<< "$(getConnectedDisplays)" ;}
+function checkConnectedDisplaysCountDifference { [ $(getConnectedDisplaysCount) -eq ${#connectedDisplaysActive[@]} ] ;}
+
+function getConnectedDisplaysActive { xrandr|grep -E ' connected.*\+' | cut -d' ' -f1 ;}
+function getConnectedDisplaysActiveCount { wc -w <<< "$(getConnectedDisplaysActive)" ;}
+function checkConnectedDisplaysActiveCountDifference { [ $(getConnectedDisplaysActiveCount) -eq ${#connectedDisplaysActive[@]} ] ;}
 
 #  ____
 # |  _ \ _ __ ___ _ __
@@ -147,30 +199,66 @@ function siteHandler { # Knows how to log into different websites
 # |_|   |_|  \___| .__/
 #                |_|
 
+if [ -z "$DISPLAY" ]
+then
+  log "\$DISPLAY NOT SET!"
+  exit 1
+fi
+
+# Kill other instances.
+pgrep -f "$_scriptName" | \
+  grep -v $_scriptPid | \
+  while read otherPid
+  do
+    log "Killing other instance: $otherPid"
+    kill $otherPid
+  done
+
+# Enumerate args
+while [ $# -gt 0 ]
+do
+  case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
+    -force) 
+      log "Forcing Pi-only commands to run."
+      isPiCheckReturnCode=0
+      ;;    
+  esac
+  shift
+done
 
 isPiCheckReturnCode
 isPiCheckReturnCodeHardware
 
 if isTmpfs /tmp
 then
-  echo "Using /tmp tmpfs"
+  log "Using /tmp tmpfs"
   TMPDIR=/tmp
 elif [ -n "${XDG_RUNTIME_DIR}" ] && isTmpfs "${XDG_RUNTIME_DIR}"
 then
-  echo "Using ${XDG_RUNTIME_DIR} tmpfs"
+  log "Using ${XDG_RUNTIME_DIR} tmpfs"
   TMPDIR=${XDG_RUNTIME_DIR}
 else
-  echo "MISSING TMPFS MOUNT. USING /tmp BUT MAY IMPACT SD LIFESPAN."
+  log "MISSING TMPFS MOUNT. USING /tmp BUT MAY IMPACT SD LIFESPAN."
 fi
 
-logFile="${TMPDIR}/${_scriptName}.log"
-echo "See log file: $logFile for script output"
+# Annotate the log with a starting timestamp
+log "[$(date)]"
 
-# Log to file
-exec 3>&1 4>&2
-trap 'exec 2>&4 1>&3' 0 1 2 3
-exec 1>${logFile} 2>&1
+pushd ${_scriptRoot}
+trap 'exit 1' EXIT HUP INT TERM
 
+
+# Check for important software
+for program in chromium xdotool unclutter
+do
+  which $program >/dev/null 2>&1|| { missingPrograms+=($program) ;}
+done
+
+if [ -n "${missingPrograms}" ]
+then
+  log "Missing: ${missingPrograms[@]}"
+  exit 1
+fi
 
 # DisplayLink support
 for usbDevice in /sys/bus/usb/devices/*
@@ -198,21 +286,37 @@ then
     then
       displayLinkReady=ready
     else
-      echo "DisplayLink devices are attached buy the evdi driver was unable to load. Skipping DisplayLink devices for this run."
+      log "DisplayLink devices are attached buy the evdi driver was unable to load. Skipping DisplayLink devices for this run."
     fi
   fi
 
   if [ -n "${displayLinkPresent}" ] && [ -n "$displayLinkReady" ]
   then
-    echo "At least one DisplayLink USB display has been detected. Running the required Xrandr commands to activate DisplayLink displays."
+    log "At least one DisplayLink USB display has been detected. Running the required Xrandr commands to activate DisplayLink displays."
     xrandr --listproviders | grep "modesetting" | grep -Po '(?<=^Provider )[0-9]+' | \
-    while read provider
-    do
-      echo "Activating DisplayLink Display #${provider}"
-      xrandr --setprovideroutputsource $provider 0
-    done
+      while read provider
+      do
+        log "Activating DisplayLink Display #${provider}"
+        log "xrandr --setprovideroutputsource $provider 0"
+        xrandr --setprovideroutputsource $provider 0
+      done
   fi
 fi
+
+
+  # Try to activate all connected displays.
+connectedDisplays=($(getConnectedDisplays))
+for display in ${connectedDisplays[@]}
+do
+  log "Configuring ${display}"
+  if [ -n "${previousDisplay}" ]
+  then
+    alignmentArgs="--right-of ${previousDisplay}"
+  fi
+  log "isPiCheckReturnCode && xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}"
+  isPiCheckReturnCode && xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}
+  previousDisplay=${display}
+done
 
 #  __  __       _
 # |  \/  | __ _(_)_ __
@@ -220,91 +324,74 @@ fi
 # | |  | | (_| | | | | |
 # |_|  |_|\__,_|_|_| |_|
 
-
-if [ -z "$DISPLAY" ]
-then
-  echo "\$DISPLAY NOT SET!"
-  exit 1
-fi
-
   # Disable display sleeping
-xset s noblank
-xset s off
-xset -dpms
+  xset s noblank
+  xset s off
+  xset -dpms
 
   # Run unclutter to hide the mouse after idle.
-pkill -f -9 unclutter
-unclutter -idle 0.5 -root &
-
-  connectedDisplays=($(xrandr|grep -E ' connected.*' | cut -d' ' -f1))
+  pkill -f -9 unclutter
+  unclutter -idle 0.5 -root &
 
   # Start an x11vnc instance for debugging
-  isPiCheckReturnCode && pkill -f -9 x11vnc
-  isPiCheckReturnCode && x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
+  #isPiCheckReturnCode && pkill -f -9 x11vnc
+  #isPiCheckReturnCode && x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
 
-  # Force 1080p
-  for display in ${connectedDisplays[@]}
-  do
-    echo "Configuring ${display}"
-    if [ -n "${previousDisplay}" ]
-    then
-      alignmentArgs="--right-of ${previousDisplay}"
-    fi
-    isPiCheckReturnCode && echo xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}
-    isPiCheckReturnCode && xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}
-
-
-    previousDisplay=${display}
-  done
-
+connectedDisplaysActive=($(getConnectedDisplaysActive))
+log "We have ${#connectedDisplaysActive[@]} active displays."
+log "Starting."
 
   # Load global configuration
-  eval $(jq -r '.credentials | to_entries | .[] | .key + "=" + (.value | @sh)' config.json)
-  eval $(jq -r '.settings    | to_entries | .[] | .key + "=" + (.value | @sh)' config.json)
-  configuredDisplays=($(jq -rc '.displays | keys | join(" ")' config.json))
-  globalPassword="$(base64 -d <<< ${globalPasswordBase64})"
+eval $(jq -r '.credentials | to_entries | .[] | .key + "=" + (.value | @sh)' config.json)
+eval $(jq -r '.settings    | to_entries | .[] | .key + "=" + (.value | @sh)' config.json)
+configuredDisplays=($(jq -rc '.displays | keys | join(" ")' config.json))
+globalPassword="$(base64 -d <<< ${globalPasswordBase64})"
 
-  [ -z "$globalUsername" ]     && echo need username             && exit 1
-  [ -z "$globalPassword" ]     && echo need globalPasswordBase64 && exit 1
-  [ -z "$configuredDisplays" ] && echo need displays             && exit 1
-  [ -z "$tabbingInterval" ]    && echo need tabbingInterval      && exit 1
+[ -z "$globalUsername" ]     && log "need username"             && exit 1
+[ -z "$globalPassword" ]     && log "need globalPasswordBase64" && exit 1
+[ -z "$configuredDisplays" ] && log "need displays"             && exit 1
+[ -z "$tabbingInterval" ]    && log "need tabbingInterval"      && exit 1
 
-# Ensure no chromium processes are running
+  # Ensure no chromium processes are running
 pkill -f -9 chromium
 
-# Emumerate displays
+  # Emumerate displays
 for configuredDisplay in ${configuredDisplays[@]}
 do
-  if [ -z "${connectedDisplays[${configuredDisplay}]}" ]
+  if [ -z "${connectedDisplaysActive[${configuredDisplay}]}" ]
   then
-    echo "There doesn't seem to be a display conncted for configuredDisplay ${configuredDisplay}"
+    log "There doesn't seem to be a display connected for configuredDisplay ${configuredDisplay}"
     continue
   fi
 
-  echo "Preparing: $configuredDisplay"
+  log "Preparing: $configuredDisplay"
 
   # Start an instance of chromium on the appropriate display
   xOffset=$(((${x} * $(((${configuredDisplay}))))))
-      URLs=($(jq -r ".displays.\"${configuredDisplay}\".urls| join(\" \")" config.json))
+  URLs=($(jq -r ".displays.\"${configuredDisplay}\".urls| join(\" \")" config.json))
   username="$(jq -r ".displays.\"${configuredDisplay}\".username" config.json)"
   password="$(jq -r ".displays.\"${configuredDisplay}\".password" config.json)"
   [ -z "$username" ] && username="${globalUsername}"
   [ -z "$username" ] || [[ "$username" == null ]] && username="${globalUsername}"
   [ -z "$password" ] || [[ "$password" == null ]] && password="${globalPassword}"
   chromium --disk-cache-dir=${TMPDIR} --user-data-dir=/tmp/${configuredDisplay} --window-position=${xOffset},0 --kiosk --incognito "${URLs[0]}" >/dev/null 2>&1 &
-  connectedDisplaysChromiumPids+=($!)
+  connectedDisplaysActiveChromiumPids+=($!)
   siteHandler ${URLs[0]}
 
   if [ ${#URLs[@]} -gt 1 ]
   then
-    echo "Opening the remainder of the URLs for this instance."
+    log "Opening the remainder of the URLs for this instance."
     chromium --disk-cache-dir=${TMPDIR} --user-data-dir=/tmp/${configuredDisplay} --kiosk --incognito ${URLs[@]:1} >/dev/null 2>&1 &
   else
-    echo "No additional URLs to open for this instance."
+    log "No additional URLs to open for this instance."
   fi
 
-  echo "Display ${configuredDisplay} done."
+  log "Display ${configuredDisplay} done."
 done
 
-echo pids for each display are: "${connectedDisplaysChromiumPids}"
+
+log "Chromium pid count: ${#connectedDisplaysActiveChromiumPids[@]}"
+
+endGraphicalSessionOnDisplayCountChange & # Activate trigger
+
 cycleTabsIndefinitely
