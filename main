@@ -38,7 +38,10 @@ function log {
   echo -e "$1" >> ${logFile}
 }
 
-function isDry { return [ -n "$isDry" ] ;}
+function isDry { 
+  [ -n "$isDry" ]
+  return $?
+}
 
 function isPiHardware {
   [ -n "$isPiHardware" ] && return $isPiHardware
