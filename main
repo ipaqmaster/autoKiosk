@@ -38,27 +38,16 @@ function log {
   echo -e "$1" >> ${logFile}
 }
 
-function isPiCheckReturnCode {
-  [ -n "$isPiCheckReturnCode" ] && return $isPiCheckReturnCode
+function isDry { return [ -n "$isDry" ] ;}
+
+function isPiHardware {
+  [ -n "$isPiHardware" ] && return $isPiHardware
 
   if grep -aiqs 'raspberry' /sys/firmware/devicetree/base/model
   then
-    isPiCheckReturnCode=0 # true
+    isPiHardware=0 # true
   else
-    isPiCheckReturnCode=1 # false
-    log "Host does not appear to be a Raspberry Pi. Avoiding special commands intended for production use."
-    log "Specify -force to bypass this check for use on non-pi systems."
-  fi
-}
-
-function isPiCheckReturnCodeHardware {
-  [ -n "$isPiCheckReturnCodeHardware" ] && return $isPiCheckReturnCodeHardware
-
-  if grep -aiqs 'raspberry' /sys/firmware/devicetree/base/model
-  then
-    isPiCheckReturnCodeHardware=0 # true
-  else
-    isPiCheckReturnCodeHardware=1 # false
+    isPiHardware=1 # false
   fi
 }
 
@@ -98,7 +87,7 @@ function endGraphicalSessionOnDisplayCountChange {
 }
 
 function endGraphicalSession {
-  isPiCheckReturnCode || { log "Not ending graphical session. Not Pi." ; return ;}
+  isDry || { log "Not ending graphical session. Not Pi." ; return ;}
 
   log "Ending graphical session."
   sudo systemctl restart display-manager # Simplified. Sudo access required.
@@ -168,7 +157,7 @@ function siteHandler { # Knows how to log into different websites
       loginPageTitle="Logicmonitor Hosted Monitoring System - Chromium"
       log "Waiting for page to finish loading..."
       until [[ "$(xdotool getactivewindow getwindowname)" == "${loginPageTitle}" ]] ; do sleep 0.5 ; done
-      isPiCheckReturnCodeHardware && sleep 5 || sleep 1 # If Pi let the page finish drawing.
+      isPiHardware && sleep 5 || sleep 1 # If Pi let the page finish drawing.
       log "Detected Logicmonitor login page. Logging in."
       xdotool getactivewindow type --clearmodifiers "${username}"
       xdotool getactivewindow key  --clearmodifiers Tab
@@ -176,7 +165,7 @@ function siteHandler { # Knows how to log into different websites
       xdotool getactivewindow key  --clearmodifiers Return
       log "Waiting for next page to finish loading..."
       until [[ "$(xdotool getactivewindow getwindowname)" != "${loginPageTitle}" ]] ; do sleep 1 ; done
-      isPiCheckReturnCodeHardware && sleep 5 || sleep 1 # If Pi let the page finish drawing.
+      isPiHardware && sleep 5 || sleep 1 # If Pi let the page finish drawing.
       ;;
     *)
       log "Unsure how to handle logins for page: \'${chromiumWindowTitle}\'. Ignoring."
@@ -218,16 +207,17 @@ pgrep -f "$_scriptName" | \
 while [ $# -gt 0 ]
 do
   case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
-    -force) 
-      log "Forcing Pi-only commands to run."
-      isPiCheckReturnCode=0
+    -dry) 
+      log "Dry mode active. Some features of the script will not activate."
+      log "This mode is intended for testing."
+      isDry=1
       ;;    
   esac
   shift
 done
 
-isPiCheckReturnCode
-isPiCheckReturnCodeHardware
+isDry
+isPiHardware
 
 if isTmpfs /tmp
 then
@@ -297,7 +287,6 @@ then
       while read provider
       do
         log "Activating DisplayLink Display #${provider}"
-        log "xrandr --setprovideroutputsource $provider 0"
         xrandr --setprovideroutputsource $provider 0
       done
   fi
@@ -313,8 +302,7 @@ do
   then
     alignmentArgs="--right-of ${previousDisplay}"
   fi
-  log "isPiCheckReturnCode && xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}"
-  isPiCheckReturnCode && xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}
+  isDry || xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}
   previousDisplay=${display}
 done
 
@@ -334,8 +322,8 @@ done
   unclutter -idle 0.5 -root &
 
   # Start an x11vnc instance for debugging
-  #isPiCheckReturnCode && pkill -f -9 x11vnc
-  #isPiCheckReturnCode && x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
+  #isDry || pkill -f -9 x11vnc
+  #isDry || x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
 
 connectedDisplaysActive=($(getConnectedDisplaysActive))
 log "We have ${#connectedDisplaysActive[@]} active displays."
