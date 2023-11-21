@@ -17,9 +17,9 @@ function log {
   logLine="$(date +'%d-%m-%y %H:%M:%S%P') ${1}"
   if [ "$2" == 'stderr' ]
   then
-    echo -e "$1" >&2
+    echo -e "${logLine}" >&2
   else
-    echo -e "$1"
+    echo -e "${logLine}"
   fi
 
   # Determine log location
@@ -36,7 +36,7 @@ function log {
   fi
 
   # Always log
-  echo -e "$1" >> ${logFile}
+  echo -e "${logLine}" >> ${logFile}
 }
 
 function isDry { 
@@ -91,7 +91,7 @@ function endGraphicalSessionOnDisplayCountChange {
 }
 
 function endGraphicalSession {
-  isDry || { log "Not ending graphical session. Not Pi." ; return ;}
+  isDry && { log "Not ending graphical session. Not Pi." ; return ;}
 
   log "Ending graphical session."
   sudo systemctl restart display-manager # Simplified. Sudo access required.
@@ -192,6 +192,9 @@ function checkConnectedDisplaysActiveCountDifference { [ $(getConnectedDisplaysA
 # |_|   |_|  \___| .__/
 #                |_|
 
+# Annotate the log with a starting timestamp
+log "[$(date)]"
+
 if [ -z "$DISPLAY" ]
 then
   log "\$DISPLAY NOT SET!"
@@ -234,9 +237,6 @@ then
 else
   log "MISSING TMPFS MOUNT. USING /tmp BUT MAY IMPACT SD LIFESPAN."
 fi
-
-# Annotate the log with a starting timestamp
-log "[$(date)]"
 
 pushd ${_scriptRoot}
 trap 'exit 1' EXIT HUP INT TERM
