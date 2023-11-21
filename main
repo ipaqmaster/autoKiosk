@@ -14,6 +14,7 @@ y=1080
 # |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
 
 function log {
+  logLine="$(date +'%d-%m-%y %H:%M:%S%P') ${1}"
   if [ "$2" == 'stderr' ]
   then
     echo -e "$1" >&2
