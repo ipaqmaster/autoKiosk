@@ -147,7 +147,7 @@ function cycleTabsIndefinitely {
   done
 
   # Relog if our chromium processes have gone missing
-  if pgrep chromium >/dev/null 2>&1
+  if ! pgrep chromium >/dev/null 2>&1
   then
     log "It seems the chromium processes have disappeared."
     log "Ending session to attempt recovery."
