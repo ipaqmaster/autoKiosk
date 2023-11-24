@@ -355,10 +355,7 @@ eval $(jq -r '.settings    | to_entries | .[] | .key + "=" + (.value | @sh)' con
 configuredDisplays=($(jq -rc '.displays | keys | join(" ")' config.json))
 globalPassword="$(base64 -d <<< ${globalPasswordBase64})"
 
-[ -z "$globalUsername" ]     && log "need username"             && exit 1
-[ -z "$globalPassword" ]     && log "need globalPasswordBase64" && exit 1
 [ -z "$configuredDisplays" ] && log "need displays"             && exit 1
-[ -z "$tabbingInterval" ]    && log "need tabbingInterval"      && exit 1
 
   # Ensure no chromium processes are running
 pkill -f -9 chromium
