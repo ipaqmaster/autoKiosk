@@ -135,6 +135,11 @@ function cycleTabsIndefinitely {
           windowId=$(xdotool search --pid ${targetPid} --onlyvisible | tail -n1)
           xdotool windowactivate ${windowId}
           xdotool key --clearmodifiers --window ${windowId} ctrl+Tab
+
+          if [[ $shouldRefresh == true ]]
+          then
+            xdotool key --clearmodifiers --window ${windowId} F5
+          fi
         fi
       else
         log "Chromium for monitor ${activeDisplayIndex} has died [${targetPid}]."
