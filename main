@@ -161,6 +161,17 @@ function cycleTabsIndefinitely {
 }
 
 function siteHandler { # Knows how to log into different websites
+  
+    # If we've rushed ahead, wait for Chromium to become active and for a page to load.
+    timeout=10 ; timer=0
+    until [[ ! $(xdotool getactivewindow getwindowname) =~ ^(New|Untitled) ]] && [[ $(xdotool getactivewindow getwindowclassname) == "Chromium" ]] || [ $timer -ge $timeout ]
+  do
+    [ $timer == 0 ] && log "Waiting for page to load..."
+    xdotool getactivewindow getwindowname
+    sleep 1
+    ((timer++))
+  done
+
   case "${URLs[0]}" in
     *"logicmonitor.com"*)
       loginPageTitle="Logicmonitor Hosted Monitoring System - Chromium"
