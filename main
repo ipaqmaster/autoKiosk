@@ -259,7 +259,7 @@ trap 'exit 1' EXIT HUP INT TERM
 
 
 # Check for important software
-for program in chromium xdotool unclutter
+for program in which xrandr jq chromium xdotool unclutter
 do
   which $program >/dev/null 2>&1|| { missingPrograms+=($program) ;}
 done
