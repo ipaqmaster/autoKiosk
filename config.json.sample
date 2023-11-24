@@ -1,6 +1,7 @@
 {
   "settings": {
-    "tabbingInterval": 15
+    "tabbingInterval": 15,
+    "shouldRefresh": false 
   },
   "credentials": {
     "globalUsername": "GlobalDefaultusername",
@@ -10,7 +11,7 @@
     "0": {
       "username": "Display01Username",
       "urls": [
-        "https://aSite.com/page"
+        "https://aSite.com/page",
         "https://aSite.com/logins/willBe/handled/onThe/First/page"
       ]
     },
@@ -23,7 +24,7 @@
     "2": {
       "username": "Display03Username",
       "urls": [
-        "https://somesite.com/page"
+        "https://somesite.com/page",
         "https://somesite.com/page2"
       ]
     }
