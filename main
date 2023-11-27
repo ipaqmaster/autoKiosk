@@ -91,7 +91,7 @@ function endGraphicalSessionOnDisplayCountChange {
 }
 
 function endGraphicalSession {
-  isDry && { log "Not ending graphical session. Not Pi." ; return ;}
+  isDry && { log "Not ending graphical session. Dry mode active." ; return ;}
 
   log "Ending graphical session."
   sudo systemctl restart display-manager # Simplified. Sudo access required.
