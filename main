@@ -117,8 +117,8 @@ function cycleTabsIndefinitely {
   while pgrep chromium >/dev/null 2>&1
   do
 
-      # Only enumerate active displays
-    for activeDisplayIndex in ${!connectedDisplaysActive[@]}
+      # Only enumerate initialized displays
+    for activeDisplayIndex in ${!connectedDisplaysActiveChromiumPids[@]}
     do
       targetPid=${connectedDisplaysActiveChromiumPids[${activeDisplayIndex}]}
 
