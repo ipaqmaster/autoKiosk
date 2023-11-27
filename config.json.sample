@@ -1,7 +1,8 @@
 {
   "settings": {
-    "tabbingInterval": 15,
-    "shouldRefresh": false 
+    "refreshInterval": 300,
+    "shouldRefresh": true,
+    "tabbingInterval": 30
   },
   "credentials": {
     "globalUsername": "GlobalDefaultusername",

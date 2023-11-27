@@ -139,7 +139,25 @@ function cycleTabsIndefinitely {
 
           if [[ $shouldRefresh == true ]]
           then
-            xdotool key --clearmodifiers --window ${windowId} F5
+            # Refresh or wait for next cycle
+            if [ ! -n "${lastRefreshUnix[${windowId}]}" ] || [ $((($(date +%s) - ${lastRefreshUnix[${windowId}]}))) -gt ${refreshInterval} ]
+            then
+                chromiumInstanceTabIndex=0
+            fi
+
+              if [ $chromiumInstanceTabIndex -le ${configuredDisplayTabs[${activeDisplayIndex}]} ]
+              then
+                xdotool key --clearmodifiers --window ${windowId} F5
+                ((chromiumInstanceTabIndex++))
+                echo "Tab cycle progress for pid $targetPid: ${configuredDisplayTabs[${activeDisplayIndex}]}"
+              fi
+
+              if [ $chromiumInstanceTabIndex -eq ${configuredDisplayTabs[${activeDisplayIndex}]} ]
+              then
+                echo "lap complete. Updating timestamp."
+                lastRefreshUnix[${windowId}]=$(date +%s)
+              fi
+
           fi
         fi
       else
@@ -326,6 +344,9 @@ do
   isDry || xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}
   previousDisplay=${display}
 done
+
+[[ $shouldRefresh == true ]] && declare -a -G lastRefreshUnix chromiumInstanceTabIndex
+
 
 #  __  __       _
 # |  \/  | __ _(_)_ __
