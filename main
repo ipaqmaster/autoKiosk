@@ -203,7 +203,8 @@ function siteHandler { # Knows how to log into different websites
       xdotool getactivewindow type --clearmodifiers "${password}"
       xdotool getactivewindow key  --clearmodifiers Return
       log "Waiting for next page to finish loading..."
-      until [[ "$(xdotool getactivewindow getwindowname)" != "${loginPageTitle}" ]] ; do sleep 1 ; done
+      timeout=0
+      until [[ "$(xdotool getactivewindow getwindowname)" != "${loginPageTitle}" ]] || [ $timeout -ge 30 ]; do sleep 1 ; ((timeout++)) ; done
       isPiHardware && sleep 5 || sleep 1 # If Pi let the page finish drawing.
       ;;
     *)
