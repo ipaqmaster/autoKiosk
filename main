@@ -130,7 +130,8 @@ function cycleTabsIndefinitely {
       if [ -d /proc/${targetPid} ]
       then
         # Ignore displays which don't have more than a single URL
-        if [ $(jq -r ".displays.\"${activeDisplayIndex}\".urls | length" config.json) -gt 1 ] 
+        jq -r ".displays.\"${activeDisplayIndex}\".urls | length" config.json
+        if [ ${configuredDisplayTabs[${activeDisplayIndex}]} -gt 1 ] 
         then
           windowId=$(xdotool search --pid ${targetPid} --onlyvisible | tail -n1)
           xdotool windowactivate ${windowId}
@@ -381,6 +382,7 @@ do
   [ -z "$password" ] || [[ "$password" == null ]] && password="${globalPassword}"
   chromium --disk-cache-dir=${TMPDIR} --user-data-dir=/tmp/${configuredDisplay} --window-position=${xOffset},0 --kiosk --incognito "${URLs[0]}" >/dev/null 2>&1 &
   connectedDisplaysActiveChromiumPids+=($!)
+  configuredDisplayTabs+=(${#URLs[@]})
   siteHandler ${URLs[0]}
 
   if [ ${#URLs[@]} -gt 1 ]
