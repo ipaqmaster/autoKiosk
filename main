@@ -251,7 +251,7 @@ then
   log "Using ${XDG_RUNTIME_DIR} tmpfs"
   TMPDIR=${XDG_RUNTIME_DIR}
 else
-  log "MISSING TMPFS MOUNT. USING /tmp BUT MAY IMPACT SD LIFESPAN."
+  isPiHardware && log "MISSING TMPFS MOUNT. USING /tmp BUT MAY IMPACT SD LIFESPAN."
 fi
 
 pushd ${_scriptRoot}
