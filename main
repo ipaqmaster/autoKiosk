@@ -218,6 +218,8 @@ function getConnectedDisplaysActive { xrandr|grep -E ' connected.*\+' | cut -d' 
 function getConnectedDisplaysActiveCount { wc -w <<< "$(getConnectedDisplaysActive)" ;}
 function checkConnectedDisplaysActiveCountDifference { [ $(getConnectedDisplaysActiveCount) -eq ${#connectedDisplaysActive[@]} ] ;}
 
+function getPrimaryDisplayRes       { xrandr |grep -Po '(?<=primary\ )[0-9]+x[0-9]+';}
+
 #  ____
 # |  _ \ _ __ ___ _ __
 # | |_) | '__/ _ \ '_ \
