@@ -4,9 +4,6 @@ _scriptRoot="$(dirname $(realpath $0))"
 _scriptName="$(basename ${_scriptRoot})"
 _scriptPid=$$
 
-x=1920
-y=1080
-
 #  _____                 _   _
 # |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
 # | |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|
@@ -333,18 +330,24 @@ then
 fi
 
 
-  # Try to activate all connected displays.
 connectedDisplays=($(getConnectedDisplays))
-for display in ${connectedDisplays[@]}
-do
-  log "Configuring ${display}"
-  if [ -n "${previousDisplay}" ]
-  then
-    alignmentArgs="--right-of ${previousDisplay}"
-  fi
-  isDry || xrandr --output ${display} --mode ${x}x${y} ${alignmentArgs}
-  previousDisplay=${display}
-done
+
+  # Try to activate all connected displays.
+if [ -z "${keepRes}" ]
+then
+  for display in ${connectedDisplays[@]}
+  do
+    log "Configuring ${display}"
+    if [ -n "${previousDisplay}" ]
+    then
+      alignmentArgs="--right-of ${previousDisplay}"
+    fi
+    xrandr --output ${display} --mode ${resX}x${resY} ${alignmentArgs}
+    previousDisplay=${display}
+  done
+else
+  log "Ignoring display settings and arrangement due to -keepRes presence."
+fi
 
 [[ $shouldRefresh == true ]] && declare -a -G lastRefreshUnix chromiumInstanceTabIndex
 
@@ -395,7 +398,7 @@ do
   log "Preparing: $configuredDisplay"
 
   # Start an instance of chromium on the appropriate display
-  xOffset=$(((${x} * $(((${configuredDisplay}))))))
+  xOffset=$(((${resX} * $(((${configuredDisplay}))))))
   URLs=($(jq -r ".displays.\"${configuredDisplay}\".urls| join(\" \")" config.json))
   username="$(jq -r ".displays.\"${configuredDisplay}\".username" config.json)"
   password="$(jq -r ".displays.\"${configuredDisplay}\".password" config.json)"
