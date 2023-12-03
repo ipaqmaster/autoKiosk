@@ -205,7 +205,7 @@ function siteHandler { # Knows how to log into different websites
       isPiHardware && sleep 5 || sleep 1 # If Pi let the page finish drawing.
       ;;
     *)
-      log "Login handling not implemented for: \'${chromiumWindowTitle}\'. Ignoring."
+      log "Login handling not implemented for: '${chromiumWindowTitle}'. Ignoring."
       ;;
   esac
 }
