@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+  <title>Test Page</title>
+  <body>
+      <h2>Testing page for the script.</h2>
+      <h3 id='queryString'>Append a ?queryString for it to be displayed on this page too.</h3>
+      <p id="dateText"></p>
+      <p id="timerText">0</p>
+      <script>
+        const date         = new Date();
+        const Timestamp    = date.getHours() + ":" +  date.getMinutes() + ":" + date.getSeconds();
+        const datePrefix   = 'Page load timestamp:          '
+        const timePrefix   = 'Seconds since last refresh:   ';
+        let   timer        = 0;
+
+        const currentUrl   = window.location.search;
+        const parmsFromUrl = new URLSearchParams(currentUrl);
+        const firstParam   = parmsFromUrl.keys().next().value;
+
+        function updateCounter() {
+          document.getElementById("timerText").innerHTML = timePrefix + timer;
+        }
+
+        function incrementCounter() {
+          timer++;
+          updateCounter();
+        }
+
+        function init() {
+          document.getElementById("dateText").innerHTML = datePrefix + Timestamp;
+          if(typeof firstParam !== "undefined") {
+            document.getElementById("queryString").innerHTML = "queryString: " + firstParam;
+          }
+
+          updateCounter();
+          setInterval(incrementCounter, 1000);
+        }
+
+        init();
+      </script> 
+  </body>
+</html>
