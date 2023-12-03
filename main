@@ -88,7 +88,7 @@ function endGraphicalSessionOnDisplayCountChange {
 }
 
 function endGraphicalSession {
-  isDry && { log "Not ending graphical session. Dry mode active." ; return ;}
+  [ -n "${keepX}" ] && { log "Not ending graphical session. -keepX specified." ; return ;}
 
   log "Ending graphical session."
   sudo systemctl restart display-manager # Simplified. Sudo access required.
@@ -248,16 +248,27 @@ while [ $# -gt 0 ]
 do
   case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
     -dry) 
-      log "Dry mode active. Some features of the script will not activate."
+      log "Dry mode active. Some features of the script will not activate. (Implies -keepres)"
       log "This mode is intended for testing."
-      isDry=1
+      keepRes=1
+      keepX=1
+      ;;    
+    -keepres|-noreschange) 
+      log "Will not change resolution this run."
+      keepRes=1
+      ;;
+    -nokill|-keepx)
+      log "Will not restart X when problems are detected."
+      keepX=1
       ;;    
   esac
   shift
 done
 
-isDry
-isPiHardware
+if [ -n "${keepRes}" ]
+then
+  resX="$(getPrimaryDisplayRes | cut -dx -f1)"
+fi
 
 if isTmpfs /tmp
 then
