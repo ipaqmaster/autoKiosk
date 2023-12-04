@@ -126,37 +126,54 @@ function cycleTabsIndefinitely {
 
       if [ -d /proc/${targetPid} ]
       then
-        # Ignore displays which don't have more than a single URL
-        jq -r ".displays.\"${activeDisplayIndex}\".urls | length" config.json
-        if [ ${configuredDisplayTabs[${activeDisplayIndex}]} -gt 1 ] 
+
+        # Ignore displays with a single URL.
+        if ! [ ${configuredDisplayTabs[${activeDisplayIndex}]} -gt 1 ] 
         then
+          continue
+
+        else
           windowId=$(xdotool search --pid ${targetPid} --onlyvisible | tail -n1)
           xdotool windowactivate ${windowId}
           xdotool key --clearmodifiers --window ${windowId} ctrl+Tab
 
+            # If refreshing is enabled refresh each tab until a lap is complete.
           if [[ $shouldRefresh == true ]]
           then
-            # Refresh or wait for next cycle
-            if [ ! -n "${lastRefreshUnix[${windowId}]}" ] || [ $((($(date +%s) - ${lastRefreshUnix[${windowId}]}))) -gt ${refreshInterval} ]
+            [ -z "${lastRefreshUnix[${windowId}]}" ] && lastRefreshUnix[${windowId}]=$(date +%s) # Initialize the timer
+
+            log "lastRefreshUnix for windowId ${windowId} is ${lastRefreshUnix[${windowId}]}"
+
+            if [ -z "${chromiumInstanceTabIndex[${windowId}]}" ] && [ $((($(date +%s) - ${lastRefreshUnix[${windowId}]}))) -gt ${refreshInterval} ]
             then
-                chromiumInstanceTabIndex=0
+                log "Refresh cycle start."
+                chromiumInstanceTabIndex[${windowId}]=0 # Begin refreshing tabs
             fi
 
-              if [ $chromiumInstanceTabIndex -le ${configuredDisplayTabs[${activeDisplayIndex}]} ]
+            if [ -n "${chromiumInstanceTabIndex[${windowId}]}" ]
+            then
+              log "Tab cycle progress for windowId ${windowId} is: ${chromiumInstanceTabIndex[${windowId}]}"
+
+              if [ ${chromiumInstanceTabIndex[${windowId}]} -lt ${configuredDisplayTabs[${activeDisplayIndex}]} ]
               then
                 xdotool key --clearmodifiers --window ${windowId} F5
-                ((chromiumInstanceTabIndex++))
-                echo "Tab cycle progress for pid $targetPid: ${configuredDisplayTabs[${activeDisplayIndex}]}"
+                echo before ${chromiumInstanceTabIndex[${windowId}]}
+                ((chromiumInstanceTabIndex[${windowId}]++))
+                echo after ${chromiumInstanceTabIndex[${windowId}]}
+                log "Refreshing this tab..."
               fi
 
-              if [ $chromiumInstanceTabIndex -eq ${configuredDisplayTabs[${activeDisplayIndex}]} ]
+              if [ ${chromiumInstanceTabIndex[${windowId}]} -eq ${configuredDisplayTabs[${activeDisplayIndex}]} ]
               then
-                echo "lap complete. Updating timestamp."
-                lastRefreshUnix[${windowId}]=$(date +%s)
+                log "lap complete. Updating timestamp."
+                chromiumInstanceTabIndex[${windowId}]=''
+                lastRefreshUnix[${windowId}]=''
               fi
+            fi
 
           fi
         fi
+
       else
         log "Chromium for monitor ${activeDisplayIndex} has died [${targetPid}]."
         log "Ending session to attempt recovery."
