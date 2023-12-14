@@ -74,18 +74,18 @@ function closeTabNumber { # Could Alt+1 then Ctrl+Tab [x] times and Ctrl+W the r
 function closeFirstTab { closeTabNumber 1 ;}
 
 function watchForDisplayCountChange { # Returns on display count change.
-	while checkConnectedDisplaysActiveCountDifference
-	do
-	  sleep 1
-	done
+  while checkConnectedDisplaysActiveCountDifference
+  do
+    sleep 1
+  done
 }
 
 function endGraphicalSessionOnDisplayCountChange {
   log "Trigger active: Will attempt to restart DM on display count change."
-    watchForDisplayCountChange
-    log "Active = $(getConnectedDisplaysActiveCount), initial = ${#connectedDisplaysActive[@]}"
-    log "The display count has changed."
-    endGraphicalSession
+  watchForDisplayCountChange
+  log "Active = $(getConnectedDisplaysActiveCount), initial = ${#connectedDisplaysActive[@]}"
+  log "The display count has changed."
+  endGraphicalSession
 }
 
 function endGraphicalSession {
