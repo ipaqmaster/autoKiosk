@@ -3,6 +3,7 @@ _scriptPath=$(realpath $0)
 _scriptRoot="$(dirname $(realpath $0))"
 _scriptName="$(basename ${_scriptRoot})"
 _scriptPid=$$
+cd ${_scriptRoot}
 
 #  _____                 _   _
 # |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
