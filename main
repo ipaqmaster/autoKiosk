@@ -377,8 +377,13 @@ else
   log "Ignoring display settings and arrangement due to -keepRes presence."
 fi
 
-[[ $shouldRefresh == true ]] && declare -a -G lastRefreshUnix chromiumInstanceTabIndex
+if ! checkConnectedDisplaysActiveCountDifference
+then
+  log "Display count has changed with resolution setting. Updating display count."
+  connectedDisplaysActive=($(getConnectedDisplaysActive))
+fi
 
+[[ $shouldRefresh == true ]] && declare -a -G lastRefreshUnix chromiumInstanceTabIndex
 
 #  __  __       _
 # |  \/  | __ _(_)_ __
