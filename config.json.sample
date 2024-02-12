@@ -10,6 +10,18 @@
     "globalUsername": "GlobalDefaultusername",
     "globalPasswordBase64": "base64OfGlobalDefaultPassword=="
   },
+  "auth_pages": {
+    "^Elastic": {
+      "method": "generic",
+      "username": "elasticsearchKibanaUser",
+      "passwordBase64": "base64OfElasticKibanaUserPassword=="
+    },
+    "MySite Log In Page": {
+      "method": "generic"
+    },
+    ".*login.*": {
+      "method": "generic"
+    },
   "displays": {
     "0": {
       "username": "Display01Username",
