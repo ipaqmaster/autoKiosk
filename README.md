@@ -8,10 +8,10 @@ Due to the performance penalties of making a Pi4 try to Ctrl+Tab 15+ URL's betwe
 
 ### Features
 
-* Timestampped logging to help with any debugging.
-* Automated display-server restarts when it notices the active display count has changed.
-* Login page detection for the first URL in an array for automated login handling. Currently supports LogicMonitor.
-  * Because the login process for LM is generic alike many other implementations this function will soon be broadened to support *most* login pages (Where the page loads with the cursor ready to type into the username field).
+* Easy to manage configuration with a sample file to get started.
+* Automated restarts of the display-server service (if permitted) when a change in display count or death of a chromium instance are detected.
+* Generic login page detection with an easy to follow config.json.sample for configuring one or more displays and additional site login page titles for automatic login handling.
+* Flags for debugging, development and testing.
   
 #### Arguments & Configuration
 
@@ -27,15 +27,18 @@ Due to the performance penalties of making a Pi4 try to Ctrl+Tab 15+ URL's betwe
 
 * Implies `-keepres` and `-keepx`
 
+`-debug`
 
+* Causes the script to log more noise for debugging purposes
   
 #### Usage
 
 The script can be started manually with a valid `config.json` which can be referenced from the `config.json.sample` provided.
 
+If a particular page title has been configured for automatic login but has not got credentials set the script will fall back to the indexed display's credentials for that URL and once more to the global credentials in that order when more specific credentials have not been set.
 
 ##### Automated Usage
 
-Install your favourite display-manager and configure a unprivileged user account for auto-login to your favourite Window Manager. Add this script as a startup parameter.
+Install your favourite display-manager and configure a unprivileged user account for auto-login to your favourite Window Manager. Add this script to the user's graphical startup list or elsewhere.
 
 
