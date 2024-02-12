@@ -135,6 +135,9 @@ function cycleTabsIndefinitely {
           xdotool windowactivate ${windowId}
           xdotool key --clearmodifiers --window ${windowId} ctrl+Tab
 
+          # Invoke the site handler in case we're looking at a login page we know how to solve
+          siteHandler
+
           if [[ $shouldRefresh == true ]]
           then
             # Refresh or wait for next cycle
@@ -177,11 +180,16 @@ function cycleTabsIndefinitely {
   fi
 }
 
-function siteHandler { # Knows how to log into different websites
-  
-    # If we've rushed ahead, wait for Chromium to become active and for a page to load.
-    timeout=10 ; timer=0
-    until [[ ! $(xdotool getactivewindow getwindowname) =~ ^(New|Untitled) ]] && [[ $(xdotool getactivewindow getwindowclassname) == "Chromium" ]] || [ $timer -ge $timeout ]
+function siteHandler { # Handles login pages
+  unset method
+  displayUsername="$(jq -r ".displays.\"${configuredDisplay}\".username | select(. != null)" config.json)"
+  displayPassword="$(jq -r ".displays.\"${configuredDisplay}\".password | select(. != null)" config.json)"
+
+  echo handling site. display is $activeDisplayIndex
+
+  # If we've rushed ahead, wait for Chromium to become active and for a page to load.
+  timeout=10 ; timer=0
+  until [[ ! $(xdotool getactivewindow getwindowname) =~ ^(New|Untitled) ]] && [[ $(xdotool getactivewindow getwindowclassname) == "Chromium" ]] || [ $timer -ge $timeout ]
   do
     [ $timer == 0 ] && log "Waiting for page to load..."
     xdotool getactivewindow getwindowname
@@ -189,25 +197,43 @@ function siteHandler { # Knows how to log into different websites
     ((timer++))
   done
 
-  case "${URLs[0]}" in
-    *"logicmonitor.com"*)
-      loginPageTitle="Logicmonitor Hosted Monitoring System - Chromium"
-      log "Waiting for page to finish loading..."
-      until [[ "$(xdotool getactivewindow getwindowname)" == "${loginPageTitle}" ]] ; do sleep 0.5 ; done
-      isPiHardware && sleep 5 || sleep 1 # If Pi let the page finish drawing.
-      log "Detected Logicmonitor login page. Logging in."
-      xdotool getactivewindow type --clearmodifiers "${username}"
+
+  # Get the window title for checking if we need to log in.
+  title="$(xdotool getactivewindow getwindowname)"
+
+  # Look for supported titles in the configuration
+  shopt -s nocasematch
+  while read titleMatch
+  do
+    if [[ "${title}" =~ ${titleMatch// /\\ } ]]
+    then
+      echo "Title matched regex: ${titleMatch}"
+      method="$(jq -r ".auth_pages.\"${titleMatch}\".method | select(. != null)" config.json)"
+      username="$(jq -r ".auth_pages.\"${titleMatch}\".username | select(. != null)" config.json)"
+      password="$(jq -r ".auth_pages.\"${titleMatch}\".passwordBase64 | select(. != null)" config.json | base64 -d)"
+    fi
+  done <<< "$(jq -r ".auth_pages | keys[]" config.json)"
+
+  # If we didn't match a regex for this page assume its functioning as intended and leave it alone.
+  [ -z "${method}" ] && return
+
+  # Match title login method with a known authentication methods
+  case "${method}" in
+    generic) # Suitable for most sites. Types a username, tabs, types a password, hits enter.
+      isPiHardware && sleep 5 || sleep 1 # If Pi allow extra time for the page to finish drawing.
+      log "Logging in with method :${method}:..."
+      xdotool getactivewindow type --clearmodifiers "${username:-${displayUsername:-${globalUsername}}}"
       xdotool getactivewindow key  --clearmodifiers Tab
-      xdotool getactivewindow type --clearmodifiers "${password}"
+      xdotool getactivewindow type --clearmodifiers "${password:-${displayPassword:-${globalPassword}}}"
       xdotool getactivewindow key  --clearmodifiers Return
       log "Waiting for next page to finish loading..."
       timeout=0
-      until [[ "$(xdotool getactivewindow getwindowname)" != "${loginPageTitle}" ]] || [ $timeout -ge 30 ]; do sleep 1 ; ((timeout++)) ; done
-      isPiHardware && sleep 5 || sleep 1 # If Pi let the page finish drawing.
-      ;;
-    *)
-      log "Login handling not implemented for: '${chromiumWindowTitle}'. Ignoring."
-      ;;
+      until [[ "$(xdotool getactivewindow getwindowname)" != "${title}" ]] || [ $timeout -ge 30 ]; do sleep 1 ; ((timeout++)) ; done
+      isPiHardware && sleep 5 || sleep 1 # If Pi allow extra time for the page to finish drawing.
+    ;;
+  *)
+    [ -n "${DEBUG}" ] && log "Login handling not implemented for: '${title}'. Ignoring."
+    ;;
   esac
 }
 
@@ -277,6 +303,10 @@ do
     -nokill|-keepx)
       log "Will not restart X when problems are detected."
       keepX=1
+      ;;    
+    -debug)
+      log "Debug logging enabled."
+      DEBUG=1
       ;;    
   esac
   shift
@@ -401,8 +431,9 @@ fi
   unclutter -idle 0.5 -root &
 
   # Start an x11vnc instance for debugging
-  #isDry || pkill -f -9 x11vnc
-  #isDry || x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
+  [ -n "${DEBUG}" ] && echo "Attempting to start X11vnc for debugging..."
+  [ -n "${DEBUG}" ] && isDry || pkill -f -9 x11vnc
+  [ -n "${DEBUG}" ] && isDry || x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
 
   # Ensure no chromium processes are running
 pkill -f -9 chromium
@@ -421,15 +452,10 @@ do
   # Start an instance of chromium on the appropriate display
   xOffset=$(((${resX} * $(((${configuredDisplay}))))))
   URLs=($(jq -r ".displays.\"${configuredDisplay}\".urls| join(\" \")" config.json))
-  username="$(jq -r ".displays.\"${configuredDisplay}\".username" config.json)"
-  password="$(jq -r ".displays.\"${configuredDisplay}\".password" config.json)"
-  [ -z "$username" ] && username="${globalUsername}"
-  [ -z "$username" ] || [[ "$username" == null ]] && username="${globalUsername}"
-  [ -z "$password" ] || [[ "$password" == null ]] && password="${globalPassword}"
   chromium --disk-cache-dir=${TMPDIR} --user-data-dir=/tmp/${configuredDisplay} --window-position=${xOffset},0 --kiosk --incognito "${URLs[0]}" >/dev/null 2>&1 &
   connectedDisplaysActiveChromiumPids+=($!)
   configuredDisplayTabs+=(${#URLs[@]})
-  siteHandler ${URLs[0]}
+  siteHandler
 
   if [ ${#URLs[@]} -gt 1 ]
   then
