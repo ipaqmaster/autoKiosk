@@ -150,12 +150,12 @@ function cycleTabsIndefinitely {
               then
                 xdotool key --clearmodifiers --window ${windowId} F5
                 ((chromiumInstanceTabIndex++))
-                echo "Tab cycle progress for pid $targetPid: ${configuredDisplayTabs[${activeDisplayIndex}]}"
+                log "Tab cycle progress for pid $targetPid: ${configuredDisplayTabs[${activeDisplayIndex}]}"
               fi
 
               if [ $chromiumInstanceTabIndex -eq ${configuredDisplayTabs[${activeDisplayIndex}]} ]
               then
-                echo "lap complete. Updating timestamp."
+                log "lap complete. Updating timestamp."
                 lastRefreshUnix[${windowId}]=$(date +%s)
               fi
 
@@ -182,10 +182,10 @@ function cycleTabsIndefinitely {
 
 function siteHandler { # Handles login pages
   unset method
-  displayUsername="$(jq -r ".displays.\"${configuredDisplay}\".username | select(. != null)" config.json)"
-  displayPassword="$(jq -r ".displays.\"${configuredDisplay}\".password | select(. != null)" config.json)"
+  [ -n "${DEBUG}" ] && log "Handling site. Display is: ${activeDisplayIndex:-${configuredDisplay}}"
+  displayUsername="$(jq -r ".displays.\"${activeDisplayIndex:-${configuredDisplay}}\".username | select(. != null)" config.json)"
+  displayPassword="$(jq -r ".displays.\"${activeDisplayIndex:-${configuredDisplay}}\".password | select(. != null)" config.json)"
 
-  echo handling site. display is $activeDisplayIndex
 
   # If we've rushed ahead, wait for Chromium to become active and for a page to load.
   timeout=10 ; timer=0
@@ -207,7 +207,7 @@ function siteHandler { # Handles login pages
   do
     if [[ "${title}" =~ ${titleMatch// /\\ } ]]
     then
-      echo "Title matched regex: ${titleMatch}"
+      [ -n "${DEBUG}" ] && log "Title matched regex: ${titleMatch}"
       method="$(jq -r ".auth_pages.\"${titleMatch}\".method | select(. != null)" config.json)"
       username="$(jq -r ".auth_pages.\"${titleMatch}\".username | select(. != null)" config.json)"
       password="$(jq -r ".auth_pages.\"${titleMatch}\".passwordBase64 | select(. != null)" config.json | base64 -d)"
@@ -215,13 +215,17 @@ function siteHandler { # Handles login pages
   done <<< "$(jq -r ".auth_pages | keys[]" config.json)"
 
   # If we didn't match a regex for this page assume its functioning as intended and leave it alone.
-  [ -z "${method}" ] && return
+  if [ -z "${method}" ]
+  then
+    [ -n "${DEBUG}" ] && [ -n "${DEBUG}" ] && log "siteHandler: No match for title ${title}. Nothing to do here."
+      return
+    fi
 
   # Match title login method with a known authentication methods
   case "${method}" in
     generic) # Suitable for most sites. Types a username, tabs, types a password, hits enter.
       isPiHardware && sleep 5 || sleep 1 # If Pi allow extra time for the page to finish drawing.
-      log "Logging in with method :${method}:..."
+      log "Logging in with method [${method}]"
       xdotool getactivewindow type --clearmodifiers "${username:-${displayUsername:-${globalUsername}}}"
       xdotool getactivewindow key  --clearmodifiers Tab
       xdotool getactivewindow type --clearmodifiers "${password:-${displayPassword:-${globalPassword}}}"
@@ -230,9 +234,10 @@ function siteHandler { # Handles login pages
       timeout=0
       until [[ "$(xdotool getactivewindow getwindowname)" != "${title}" ]] || [ $timeout -ge 30 ]; do sleep 1 ; ((timeout++)) ; done
       isPiHardware && sleep 5 || sleep 1 # If Pi allow extra time for the page to finish drawing.
+      log "Done."
     ;;
   *)
-    [ -n "${DEBUG}" ] && log "Login handling not implemented for: '${title}'. Ignoring."
+    [ -n "${DEBUG}" ] && log "Login handling not defined for method: '${method}'. Ignoring."
     ;;
   esac
 }
@@ -431,7 +436,7 @@ fi
   unclutter -idle 0.5 -root &
 
   # Start an x11vnc instance for debugging
-  [ -n "${DEBUG}" ] && echo "Attempting to start X11vnc for debugging..."
+  [ -n "${DEBUG}" ] && log "Attempting to start X11vnc for debugging..."
   [ -n "${DEBUG}" ] && isDry || pkill -f -9 x11vnc
   [ -n "${DEBUG}" ] && isDry || x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
 
@@ -441,13 +446,14 @@ pkill -f -9 chromium
   # Emumerate displays
 for configuredDisplay in ${configuredDisplays[@]}
 do
+  export configuredDisplay
   if [ -z "${connectedDisplaysActive[${configuredDisplay}]}" ]
   then
     log "There doesn't seem to be a display connected for configuredDisplay ${configuredDisplay}"
     continue
   fi
 
-  log "Preparing: $configuredDisplay"
+  log "Preparing: ${configuredDisplay}"
 
   # Start an instance of chromium on the appropriate display
   xOffset=$(((${resX} * $(((${configuredDisplay}))))))
@@ -455,6 +461,7 @@ do
   chromium --disk-cache-dir=${TMPDIR} --user-data-dir=/tmp/${configuredDisplay} --window-position=${xOffset},0 --kiosk --incognito "${URLs[0]}" >/dev/null 2>&1 &
   connectedDisplaysActiveChromiumPids+=($!)
   configuredDisplayTabs+=(${#URLs[@]})
+  sleep 1 # Graceful initial wait
   siteHandler
 
   if [ ${#URLs[@]} -gt 1 ]
