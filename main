@@ -210,6 +210,7 @@ function siteHandler { # Handles login pages
   [ -n "${DEBUG}" ] && log "Handling site. Display is: ${activeDisplayIndex:-${configuredDisplay}}"
   displayUsername="$(jq -r ".displays.\"${activeDisplayIndex:-${configuredDisplay}}\".username | select(. != null)" config.json)"
   displayPassword="$(jq -r ".displays.\"${activeDisplayIndex:-${configuredDisplay}}\".password | select(. != null)" config.json)"
+  displayTotpBase32="$(jq -r ".displays.\"${activeDisplayIndex:-${configuredDisplay}}\".totp   | select(. != null)" config.json)"
 
 
   # If we've rushed ahead, wait for Chromium to become active and for a page to load.
@@ -233,7 +234,7 @@ function siteHandler { # Handles login pages
     if [[ "${title}" =~ ${titleMatch// /\\ } ]]
     then
       [ -n "${DEBUG}" ] && log "Title matched regex: ${titleMatch}"
-      method="$(jq -r ".auth_pages.\"${titleMatch}\".method | select(. != null)" config.json)"
+        method="$(jq -r ".auth_pages.\"${titleMatch}\".method | select(. != null)" config.json)"
       username="$(jq -r ".auth_pages.\"${titleMatch}\".username | select(. != null)" config.json)"
       password="$(jq -r ".auth_pages.\"${titleMatch}\".passwordBase64 | select(. != null)" config.json | base64 -d)"
     fi

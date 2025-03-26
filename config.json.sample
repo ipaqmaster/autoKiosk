@@ -25,6 +25,7 @@
   "displays": {
     "0": {
       "username": "Display01Username",
+      "totp": "optional base32 totp string",
       "urls": [
         "https://aSite.com/page",
         "https://aSite.com/logins/willBe/handled/onThe/First/page"
