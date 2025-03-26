@@ -180,6 +180,31 @@ function cycleTabsIndefinitely {
   fi
 }
 
+function waitTitleChange {
+  log "Waiting for next page to finish loading..."
+  timeout=0
+  until [[ "$(xdotool getactivewindow getwindowname)" != "${title}" ]] || [ $timeout -ge 30 ]; do sleep 1 ; ((timeout++)) ; done
+  isPiHardware && sleep 5 || sleep 1 # If Pi allow extra time for the page to finish drawing.
+}
+
+function method_generic {
+  isPiHardware && sleep 5 || sleep 1 # If Pi allow extra time for the page to finish drawing.
+  log "Logging in with method [${method}]"
+  xdotool getactivewindow type --clearmodifiers "${username:-${displayUsername:-${globalUsername}}}"
+  xdotool getactivewindow key  --clearmodifiers Tab
+  xdotool getactivewindow type --clearmodifiers "${password:-${displayPassword:-${globalPassword}}}"
+  xdotool getactivewindow key  --clearmodifiers Return
+}
+
+function method_totp {
+  totpCode="$(./totp "${1}")"
+  log "Entering TOTP Code... [${totpCode}]"
+  xdotool getactivewindow type --clearmodifiers "${totpCode}"
+  sleep 1
+  xdotool getactivewindow key  --clearmodifiers Return
+}
+
+
 function siteHandler { # Handles login pages
   unset method
   [ -n "${DEBUG}" ] && log "Handling site. Display is: ${activeDisplayIndex:-${configuredDisplay}}"
@@ -224,17 +249,19 @@ function siteHandler { # Handles login pages
   # Match title login method with a known authentication methods
   case "${method}" in
     generic) # Suitable for most sites. Types a username, tabs, types a password, hits enter.
-      isPiHardware && sleep 5 || sleep 1 # If Pi allow extra time for the page to finish drawing.
-      log "Logging in with method [${method}]"
-      xdotool getactivewindow type --clearmodifiers "${username:-${displayUsername:-${globalUsername}}}"
-      xdotool getactivewindow key  --clearmodifiers Tab
-      xdotool getactivewindow type --clearmodifiers "${password:-${displayPassword:-${globalPassword}}}"
-      xdotool getactivewindow key  --clearmodifiers Return
-      log "Waiting for next page to finish loading..."
-      timeout=0
-      until [[ "$(xdotool getactivewindow getwindowname)" != "${title}" ]] || [ $timeout -ge 30 ]; do sleep 1 ; ((timeout++)) ; done
-      isPiHardware && sleep 5 || sleep 1 # If Pi allow extra time for the page to finish drawing.
-      log "Done."
+      method_generic
+      waitTitleChange
+    ;;
+  generic_totp)
+      method_generic nowait
+      if [ -n "${displayTotpBase32}" ]
+      then
+        sleep 1
+        method_totp "${displayTotpBase32}"
+        waitTitleChange
+      else
+        log "No TOTP code configured for this display."
+      fi
     ;;
   *)
     [ -n "${DEBUG}" ] && log "Login handling not defined for method: '${method}'. Ignoring."
