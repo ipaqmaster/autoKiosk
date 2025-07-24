@@ -154,6 +154,9 @@ def start_session(config, monitor, display_id, x=None, y=None):
     # Use kiosk mode
     chrome_options.add_argument("--kiosk")
 
+    # Use guest mode to hide the password save pop-up
+    chrome_options.add_argument("--guest")
+
     # Hide automation banner
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
