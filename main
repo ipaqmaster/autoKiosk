@@ -1,511 +1,232 @@
-#!/bin/bash
-_scriptPath=$(realpath $0)
-_scriptRoot="$(dirname $(realpath $0))"
-_scriptName="$(basename ${_scriptRoot})"
-_scriptPid=$$
-cd ${_scriptRoot}
+#!/usr/bin/env python
+from screeninfo import get_monitors
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from time import sleep
+import base64
+import json
+import os
+import pyotp
+import re
+import threading
+
+_scriptRoot = os.path.dirname(os.path.realpath(__file__))
+_scriptName = _scriptRoot.split('/')[-1]
+_namespace  = _scriptName
+configFile  = "%s/config.json" % _scriptRoot
 
 #  _____                 _   _
 # |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
 # | |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|
 # |  _|| |_| | | | | (__| |_| | (_) | | | \__ \
 # |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
+#
 
-function log {
-  logLine="$(date +'%d-%m-%y %H:%M:%S%P') ${1}"
-  if [ "$2" == 'stderr' ]
-  then
-    echo -e "${logLine}" >&2
-  else
-    echo -e "${logLine}"
-  fi
-
-  # Determine log location
-  if [ -z "${logFile}" ]
-  then
-    if [ -z "${TMPDIR}" ]
-    then
-      logFile=${_scriptPath}.log
-    else
-      logFile=${TMPDIR}/${_scriptName}.log
-    fi
-
-    echo "Using logFile path: ${logFile}"
-  fi
-
-  # Always log
-  echo -e "${logLine}" >> ${logFile}
-}
-
-function isDry { 
-  [ -n "$isDry" ]
-  return $?
-}
-
-function isPiHardware {
-  [ -n "$isPiHardware" ] && return $isPiHardware
-
-  if grep -aiqs 'raspberry' /sys/firmware/devicetree/base/model
-  then
-    isPiHardware=0 # true
-  else
-    isPiHardware=1 # false
-  fi
-}
-
-function isTmpfs {
-  [ -z "${1}" ] && log "no arg given" && return 1
-  [[ "$(df -h --output=fstype "${1}" 2>&1 | tail -n1)" == "tmpfs" ]]
-  return $?
-}
-
-function closeTabNumber { # Could Alt+1 then Ctrl+Tab [x] times and Ctrl+W the resulting tab.
-  tabNumber="$1"
-  if [[ $1 =~ ^[0-9]$ ]]
-  then
-    log "Closing tab: $1..."
-    xdotool getactivewindow key --clearmodifiers --delay 1000 Alt+${tabNumber} Ctrl+w
-    log "Done."
-  else
-    log "Tab number must be 0-9 for alt+# sequence."
-  fi
-}
-
-function closeFirstTab { closeTabNumber 1 ;}
-
-function watchForDisplayCountChange { # Returns on display count change.
-  while checkConnectedDisplaysActiveCountDifference
-  do
-    sleep 1
-  done
-}
-
-function endGraphicalSessionOnDisplayCountChange {
-  log "Trigger active: Will attempt to restart DM on display count change."
-  watchForDisplayCountChange
-  log "Active = $(getConnectedDisplaysActiveCount), initial = ${#connectedDisplaysActive[@]}"
-  log "The display count has changed."
-  endGraphicalSession
-}
-
-function endGraphicalSession {
-  [ -n "${keepX}" ] && { log "Not ending graphical session. -keepX specified." ; return ;}
-
-  log "Ending graphical session."
-  sudo systemctl restart display-manager # Simplified. Sudo access required.
-  exit 1
-#  case $XDG_SESSION_DESKTOP in
-#    xfce)
-#      xfce4-session-logout
-#      exit 1
-#      ;;
-#    gnome)
-#      gnome-session-quit
-#      exit 1
-#      ;;
-#    *)
-#      log "Unsure how to exit $XDG_SESSION_DESKTOP"
-#      ;;
-#  esac
-}
-
-function cycleTabsIndefinitely {
-  log "Cycling tabs until there are no chromium processes or our display count changes..."
-
-  while pgrep chromium >/dev/null 2>&1
-  do
-
-      # Only enumerate initialized displays
-    for activeDisplayIndex in ${!connectedDisplaysActiveChromiumPids[@]}
-    do
-      targetPid=${connectedDisplaysActiveChromiumPids[${activeDisplayIndex}]}
-
-      if [ -z "$targetPid" ]
-      then
-        log "Failed to get pid for activeDisplayIndex ${activeDisplayIndex}"
-      fi
-
-      if [ -d /proc/${targetPid} ]
-      then
-        # Ignore displays which don't have more than a single URL
-        jq -r ".displays.\"${activeDisplayIndex}\".urls | length" config.json
-        if [ ${configuredDisplayTabs[${activeDisplayIndex}]} -gt 1 ] 
-        then
-          windowId=$(xdotool search --pid ${targetPid} --onlyvisible | tail -n1)
-          xdotool windowactivate ${windowId}
-          xdotool key --clearmodifiers --window ${windowId} ctrl+Tab
-
-          # Invoke the site handler in case we're looking at a login page we know how to solve
-          siteHandler
-
-          if [[ $shouldRefresh == true ]]
-          then
-            # Refresh or wait for next cycle
-            if [ ! -n "${lastRefreshUnix[${windowId}]}" ] || [ $((($(date +%s) - ${lastRefreshUnix[${windowId}]}))) -gt ${refreshInterval} ]
-            then
-                chromiumInstanceTabIndex=0
-            fi
-
-              if [ $chromiumInstanceTabIndex -le ${configuredDisplayTabs[${activeDisplayIndex}]} ]
-              then
-                xdotool key --clearmodifiers --window ${windowId} F5
-                ((chromiumInstanceTabIndex++))
-                log "Tab cycle progress for pid $targetPid: ${configuredDisplayTabs[${activeDisplayIndex}]}"
-              fi
-
-              if [ $chromiumInstanceTabIndex -eq ${configuredDisplayTabs[${activeDisplayIndex}]} ]
-              then
-                log "lap complete. Updating timestamp."
-                lastRefreshUnix[${windowId}]=$(date +%s)
-              fi
-
-          fi
-        fi
-      else
-        log "Chromium for monitor ${activeDisplayIndex} has died [${targetPid}]."
-        log "Ending session to attempt recovery."
-        endGraphicalSession
-      fi
-    done
-
-    sleep ${tabbingInterval} # Sleeping first to stay on initial page for same delay too.
-  done
-
-  # Relog if our chromium processes have gone missing
-  if ! pgrep chromium >/dev/null 2>&1
-  then
-    log "It seems the chromium processes have disappeared."
-    log "Ending session to attempt recovery."
-    endGraphicalSession
-  fi
-}
-
-function waitTitleChange {
-  log "Waiting for next page to finish loading..."
-  timeout=0
-  until [[ "$(xdotool getactivewindow getwindowname)" != "${title}" ]] || [ $timeout -ge 30 ]; do sleep 1 ; ((timeout++)) ; done
-  isPiHardware && sleep 5 || sleep 1 # If Pi allow extra time for the page to finish drawing.
-}
-
-function method_generic {
-  isPiHardware && sleep 5 || sleep 1 # If Pi allow extra time for the page to finish drawing.
-  log "Logging in with method [${method}]"
-  xdotool getactivewindow type --clearmodifiers "${username:-${displayUsername:-${globalUsername}}}"
-  xdotool getactivewindow key  --clearmodifiers Tab
-  xdotool getactivewindow type --clearmodifiers "${password:-${displayPassword:-${globalPassword}}}"
-  xdotool getactivewindow key  --clearmodifiers Return
-}
-
-function method_totp {
-  totpCode="$(./totp "${1}")"
-  log "Entering TOTP Code... [${totpCode}]"
-  xdotool getactivewindow type --clearmodifiers "${totpCode}"
-  sleep 1
-  xdotool getactivewindow key  --clearmodifiers Return
-}
-
-
-function siteHandler { # Handles login pages
-  unset method
-  [ -n "${DEBUG}" ] && log "Handling site. Display is: ${activeDisplayIndex:-${configuredDisplay}}"
-  displayUsername="$(jq -r ".displays.\"${activeDisplayIndex:-${configuredDisplay}}\".username | select(. != null)" config.json)"
-  displayPassword="$(jq -r ".displays.\"${activeDisplayIndex:-${configuredDisplay}}\".password | select(. != null)" config.json)"
-  displayTotpBase32="$(jq -r ".displays.\"${activeDisplayIndex:-${configuredDisplay}}\".totp   | select(. != null)" config.json)"
-
-
-  # If we've rushed ahead, wait for Chromium to become active and for a page to load.
-  timeout=10 ; timer=0
-  until [[ ! $(xdotool getactivewindow getwindowname) =~ ^(New|Untitled) ]] && [[ $(xdotool getactivewindow getwindowclassname) == "Chromium" ]] || [ $timer -ge $timeout ]
-  do
-    [ $timer == 0 ] && log "Waiting for page to load..."
-    xdotool getactivewindow getwindowname
-    sleep 1
-    ((timer++))
-  done
-
-
-  # Get the window title for checking if we need to log in.
-  title="$(xdotool getactivewindow getwindowname)"
-
-  # Look for supported titles in the configuration
-  shopt -s nocasematch
-  while read titleMatch
-  do
-    if [[ "${title}" =~ ${titleMatch// /\\ } ]]
-    then
-      [ -n "${DEBUG}" ] && log "Title matched regex: ${titleMatch}"
-        method="$(jq -r ".auth_pages.\"${titleMatch}\".method | select(. != null)" config.json)"
-      username="$(jq -r ".auth_pages.\"${titleMatch}\".username | select(. != null)" config.json)"
-      password="$(jq -r ".auth_pages.\"${titleMatch}\".passwordBase64 | select(. != null)" config.json | base64 -d)"
-    fi
-  done <<< "$(jq -r ".auth_pages | keys[]" config.json)"
-
-  # If we didn't match a regex for this page assume its functioning as intended and leave it alone.
-  if [ -z "${method}" ]
-  then
-    [ -n "${DEBUG}" ] && [ -n "${DEBUG}" ] && log "siteHandler: No match for title ${title}. Nothing to do here."
-      return
-    fi
-
-  # Match title login method with a known authentication methods
-  case "${method}" in
-    generic) # Suitable for most sites. Types a username, tabs, types a password, hits enter.
-      method_generic
-      waitTitleChange
-    ;;
-  generic_totp)
-      method_generic nowait
-      if [ -n "${displayTotpBase32}" ]
-      then
-        sleep 1
-        method_totp "${displayTotpBase32}"
-        waitTitleChange
-      else
-        log "No TOTP code configured for this display."
-      fi
-    ;;
-  *)
-    [ -n "${DEBUG}" ] && log "Login handling not defined for method: '${method}'. Ignoring."
-    ;;
-  esac
-}
-
-function getConnectedDisplays       { xrandr|grep -E ' connected.*'   | cut -d' ' -f1 ;}
-function getConnectedDisplaysCount  { wc -w <<< "$(getConnectedDisplays)" ;}
-function checkConnectedDisplaysCountDifference { [ $(getConnectedDisplaysCount) -eq ${#connectedDisplaysActive[@]} ] ;}
-
-function getConnectedDisplaysActive { xrandr|grep -E ' connected.*\+' | cut -d' ' -f1 ;}
-function getConnectedDisplaysActiveCount { wc -w <<< "$(getConnectedDisplaysActive)" ;}
-function checkConnectedDisplaysActiveCountDifference { [ $(getConnectedDisplaysActiveCount) -eq ${#connectedDisplaysActive[@]} ] ;}
-
-function getPrimaryDisplayRes       { xrandr |grep -Po '(?<=primary\ )[0-9]+x[0-9]+';}
-
-#  ____
-# |  _ \ _ __ ___ _ __
-# | |_) | '__/ _ \ '_ \
-# |  __/| | |  __/ |_) |
-# |_|   |_|  \___| .__/
-#                |_|
-
-# Annotate the log with a starting timestamp
-log "[$(date)]"
-
-if [ -z "$DISPLAY" ]
-then
-  log "\$DISPLAY NOT SET!"
-  exit 1
-fi
-
-connectedDisplaysActive=($(getConnectedDisplaysActive))
-log "We have ${#connectedDisplaysActive[@]} active displays."
-log "Starting."
-
-  # Load global configuration
-eval $(jq -r '.credentials | to_entries | .[] | .key + "=" + (.value | @sh)' config.json)
-eval $(jq -r '.settings    | to_entries | .[] | .key + "=" + (.value | @sh)' config.json)
-configuredDisplays=($(jq -rc '.displays | keys | join(" ")' config.json))
-globalPassword="$(base64 -d <<< ${globalPasswordBase64})"
-
-[ -z "$configuredDisplays" ] && log "need displays"             && exit 1
-
-
-
-# Kill other instances.
-pgrep -f "$_scriptName" | \
-  grep -v $_scriptPid | \
-  while read otherPid
-  do
-    log "Killing other instance: $otherPid"
-    kill $otherPid
-  done
-
-# Enumerate args
-while [ $# -gt 0 ]
-do
-  case "$(tr '[:upper:]' '[:lower:]'<<<$1)" in
-    -dry) 
-      log "Dry mode active. Some features of the script will not activate. (Implies -keepres)"
-      log "This mode is intended for testing."
-      keepRes=1
-      keepX=1
-      ;;    
-    -keepres|-noreschange) 
-      log "Will not change resolution this run."
-      keepRes=1
-      ;;
-    -nokill|-keepx)
-      log "Will not restart X when problems are detected."
-      keepX=1
-      ;;    
-    -debug)
-      log "Debug logging enabled."
-      DEBUG=1
-      ;;    
-  esac
-  shift
-done
-
-if [ -n "${keepRes}" ]
-then
-  resX="$(getPrimaryDisplayRes | cut -dx -f1)"
-fi
-
-if isTmpfs /tmp
-then
-  log "Using /tmp tmpfs"
-  TMPDIR=/tmp
-elif [ -n "${XDG_RUNTIME_DIR}" ] && isTmpfs "${XDG_RUNTIME_DIR}"
-then
-  log "Using ${XDG_RUNTIME_DIR} tmpfs"
-  TMPDIR=${XDG_RUNTIME_DIR}
-else
-  isPiHardware && log "MISSING TMPFS MOUNT. USING /tmp BUT MAY IMPACT SD LIFESPAN."
-fi
-
-pushd ${_scriptRoot}
-trap 'exit 1' EXIT HUP INT TERM
-
-
-# Check for important software
-for program in which xrandr jq chromium xdotool unclutter
-do
-  which $program >/dev/null 2>&1|| { missingPrograms+=($program) ;}
-done
-
-if [ -n "${missingPrograms}" ]
-then
-  log "Missing: ${missingPrograms[@]}"
-  exit 1
-fi
-
-# DisplayLink support
-for usbDevice in /sys/bus/usb/devices/*
-do
-  if [ -f ${usbDevice}/manufacturer ]
-  then
-    if [[ "$(cat ${usbDevice}/manufacturer)" == DisplayLink ]]
-    then
-      displayLinkPresent=1
-      break
-    fi
-  fi
-done
-
-if [ -n "${displayLinkPresent}" ]
-then
-
-  if [ -d /sys/module/evdi ]
-  then
-    displayLinkReady=ready
-  else
-    modprobe evdi
-    modprobeStatus=$?
-    if [ ${modprobeStatus} -eq 0 ]
-    then
-      displayLinkReady=ready
-    else
-      log "DisplayLink devices are attached buy the evdi driver was unable to load. Skipping DisplayLink devices for this run."
-    fi
-  fi
-
-  if [ -n "${displayLinkPresent}" ] && [ -n "$displayLinkReady" ]
-  then
-    log "At least one DisplayLink USB display has been detected. Running the required Xrandr commands to activate DisplayLink displays."
-    xrandr --listproviders | grep "modesetting" | grep -Po '(?<=^Provider )[0-9]+' | \
-      while read provider
-      do
-        log "Activating DisplayLink Display #${provider}"
-        xrandr --setprovideroutputsource $provider 0
-      done
-  fi
-fi
-
-
-connectedDisplays=($(getConnectedDisplays))
-
-  # Try to activate all connected displays.
-if [ -z "${keepRes}" ]
-then
-  for display in ${connectedDisplays[@]}
-  do
-    log "Configuring ${display}"
-    if [ -n "${previousDisplay}" ]
-    then
-      alignmentArgs="--right-of ${previousDisplay}"
-    fi
-    xrandr --output ${display} --mode ${resX}x${resY} ${alignmentArgs}
-    previousDisplay=${display}
-  done
-else
-  log "Ignoring display settings and arrangement due to -keepRes presence."
-fi
-
-if ! checkConnectedDisplaysActiveCountDifference
-then
-  log "Display count has changed with resolution setting. Updating display count."
-  connectedDisplaysActive=($(getConnectedDisplaysActive))
-fi
-
-[[ $shouldRefresh == true ]] && declare -a -G lastRefreshUnix chromiumInstanceTabIndex
+
+def wait_page_load(driver, timeout=30):
+    WebDriverWait(driver, timeout).until(
+        lambda d: d.execute_script("return document.readyState") == "complete"
+    )
+
+def is_login_page(driver):
+    #keywords = ["login", "sign in", "log in", "sign-in", "logicmonitor hosted monitoring system"]
+    keywords = ["login", "sign in", "log in", "sign-in", "two-factor authentication"]
+
+    # Check title
+    title = driver.title.lower()
+    if any(keyword in title for keyword in keywords):
+        return True
+
+    # Check body text
+    body = driver.find_element("tag name", "body").text.lower()
+    if any(keyword in body for keyword in keywords):
+        return True
+
+    # Check form attributes (optional)
+    forms = driver.find_elements("tag name", "form")
+    for form in forms:
+        html = form.get_attribute("outerHTML").lower()
+        if any(keyword in html for keyword in keywords):
+            return True
+
+    return False
+
+
+def input_field(driver, field, data, wait):
+    field_input = wait.until(EC.presence_of_element_located(field))
+    field_input.clear()
+    field_input.send_keys(data)
+
+def get_credentials(config, display_id, page_title):
+    "Check auth_pages, then the display's own credentials and finally the global credentials for a username and password"
+
+    username = password = None
+
+    # Search the auth_pages configurable for a matching set of credentials for this particular page.
+    for regex_title in config['auth_pages']:
+        if re.search(regex_title, page_title):
+            #print('MATCH')
+            username = config['auth_pages'][regex_title]['username']
+            password = base64.b64decode(config['auth_pages'][regex_title]['passwordBase64']).decode('utf-8')
+            break
+
+    if not username:
+        if 'username' in config['displays'][display_id]:
+            username = config['displays'][display_id]['username']
+
+        else: # Check for a specific set of credentials in auth_pages or try the global definition
+
+
+            if 'credentials' in config:
+                if globalUsername in config['credentials']:
+                    username = config['credentials']['username']
+                else:
+                    print('No usernames set anywhere. Giving up.')
+                    return(False)
+
+    if not password:
+        if 'password' in config['displays'][display_id]:
+            password = base64.b64decode(config['displays'][display_id]['password']).decode('utf-8')
+
+        else:
+            if 'credentials' in config:
+                if 'globalPasswordBase64' in config['credentials']:
+                    password = base64.b64decode(config['credentials']['globalPasswordBase64']).decode('utf-8')
+                else:
+                    print('No passwords set anywhere. Giving up.')
+                    return(False)
+
+
+    return username, password
+
+def handle_login(driver, config, display_id):
+    print('Logging in...')
+
+    # Determine credentials
+    username, password = get_credentials(config, display_id, driver.title)
+
+    # Fill in some fields and submit
+    try:
+        wait_page_load(driver)
+        wait = WebDriverWait(driver, 10)
+
+        # Fill in the username and password fields
+        input_field(driver, (By.NAME,"username"), username, wait)
+        input_field(driver, (By.NAME,"password"), password, wait)
+
+        # Click Submit
+        submit_button = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+        submit_button.click()
+
+        # If we're still on a login page assume we're being challenged for a 2FA token. Should write a proper 2fa check.
+        wait_page_load(driver)
+        sleep(3) # wait_page_load isn't working too well for dynamic content
+        if is_login_page(driver):
+            if 'totp' in config['displays'][display_id]:
+                totp_code = pyotp.TOTP(config['displays'][display_id]['totp']).now()
+                input_field(driver, (By.CSS_SELECTOR, "input[placeholder*='Token']"), totp_code, wait)
+                submit_button = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
+                submit_button.click()
+                wait_page_load(driver)
+            else:
+                raise Exception("Still on login page after login attempt and no TOTP information stored!")
+
+    except Exception as e:
+        print("Something went wrong: %s" % e)
+
+
+
+def handle_page(driver, config, display_id):
+    #page_title = driver.title
+
+    if is_login_page(driver):
+        handle_login(driver, config, display_id)
+        print('c')
+
+def start_session(config, monitor, display_id, x=None, y=None):
+    urls = config['displays'][display_id]['urls']
+
+    chrome_options = Options()
+
+    # Use kiosk mode
+    chrome_options.add_argument("--kiosk")
+
+    # Hide automation banner
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option("useAutomationExtension", False)
+
+    # Place it on the correct display
+    chrome_options.add_argument("--window-position=%s,%s" % (monitor.x, monitor.y))
+
+    driver = webdriver.Chrome(options=chrome_options)
+
+    primary_url    = urls[0]
+    remaining_urls = urls[1:]
+
+    # Open the primary url (First), handle any authentication.
+    driver.get(primary_url)
+    wait_page_load(driver)
+    handle_page(driver, config, display_id)
+    sleep(1) # Graceful sleep. Might not be enough on slower hosts
+
+    # Open the rest of the urls as tabs
+    for url in remaining_urls:
+        driver.execute_script("window.open('%s');" % url)
+
+    # Cycle through tabs until we die
+    print('Thread %s cycling all tabs...' % display_id)
+    while True:
+        for handle in driver.window_handles:
+            driver.switch_to.window(handle)
+            if config['settings']['shouldRefresh']:
+                driver.refresh()
+                wait_page_load(driver)
+
+            handle_page(driver, config, display_id)
+
+            sleep(config['settings']['tabbingInterval'])
+
 
 #  __  __       _
 # |  \/  | __ _(_)_ __
 # | |\/| |/ _` | | '_ \
 # | |  | | (_| | | | | |
 # |_|  |_|\__,_|_|_| |_|
+#
 
-  # Disable display sleeping
-  xset s noblank
-  xset s off
-  xset -dpms
+def main():
+    try:
+       with open(configFile, 'r') as file:
+           config = json.loads(file.read())
+    except FileNotFoundError:
+        print('Please copy %s.sample to %s to get started.' % (configFile, configFile))
+        exit(1)
 
-  # Run unclutter to hide the mouse after idle.
-  pkill -f -9 unclutter
-  unclutter -idle 0.5 -root &
+    # Track our threads
+    threads = []
 
-  # Start an x11vnc instance for debugging
-  [ -n "${DEBUG}" ] && log "Attempting to start X11vnc for debugging..."
-  [ -n "${DEBUG}" ] && isDry || pkill -f -9 x11vnc
-  [ -n "${DEBUG}" ] && isDry || x11vnc -bg -reopen -forever -display :0 >/dev/null 2>&1 &
+    # Get a monitor count
+    monitors = get_monitors()
 
-  # Ensure no chromium processes are running
-pkill -f -9 chromium
+    # Iterate over monitors and those configured
+    for displayIndex in range(0, len(monitors)):
+        monitor = monitors[displayIndex]
 
-  # Emumerate displays
-for configuredDisplay in ${configuredDisplays[@]}
-do
-  export configuredDisplay
-  if [ -z "${connectedDisplaysActive[${configuredDisplay}]}" ]
-  then
-    log "There doesn't seem to be a display connected for configuredDisplay ${configuredDisplay}"
-    continue
-  fi
+        #start_session(config, monitor, display_id=displayIndex)
 
-  log "Preparing: ${configuredDisplay}"
+        thread = threading.Thread(target=start_session, args=(config, monitor, displayIndex))
+        thread.start()
+        threads.append(thread)
 
-  # Start an instance of chromium on the appropriate display
-  xOffset=$(((${resX} * $(((${configuredDisplay}))))))
-  URLs=($(jq -r ".displays.\"${configuredDisplay}\".urls| join(\" \")" config.json))
-  chromium --disk-cache-dir=${TMPDIR} --user-data-dir=/tmp/${configuredDisplay} --window-position=${xOffset},0 --kiosk --incognito "${URLs[0]}" >/dev/null 2>&1 &
-  connectedDisplaysActiveChromiumPids+=($!)
-  configuredDisplayTabs+=(${#URLs[@]})
-  sleep 1 # Graceful initial wait
-  siteHandler
-
-  if [ ${#URLs[@]} -gt 1 ]
-  then
-    log "Opening the remainder of the URLs for this instance."
-    chromium --disk-cache-dir=${TMPDIR} --user-data-dir=/tmp/${configuredDisplay} --kiosk --incognito ${URLs[@]:1} >/dev/null 2>&1 &
-  else
-    log "No additional URLs to open for this instance."
-  fi
-
-  log "Display ${configuredDisplay} done."
-done
+    # Wait for them to finish
+    print('Waiting for threads to exit...')
+    for thread in threads:
+        thread.join()
 
 
-log "Chromium pid count: ${#connectedDisplaysActiveChromiumPids[@]}"
+if __name__ == "__main__":
+    main()
 
-endGraphicalSessionOnDisplayCountChange & # Activate trigger
-
-cycleTabsIndefinitely

@@ -2,9 +2,7 @@
   "settings": {
     "refreshInterval": 300,
     "shouldRefresh": false,
-    "tabbingInterval": 15,
-    "resX": 1920,
-    "resY": 1080
+    "tabbingInterval": 15
   },
   "credentials": {
     "globalUsername": "GlobalDefaultusername",
