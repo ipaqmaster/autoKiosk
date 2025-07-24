@@ -7,10 +7,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from time import sleep
 import base64
+import glob
 import json
 import os
 import pyotp
 import re
+import subprocess
 import threading
 
 _scriptRoot = os.path.dirname(os.path.realpath(__file__))
@@ -25,6 +27,122 @@ configFile  = "%s/config.json" % _scriptRoot
 # |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
 #
 
+def runCmd(command, capture_output=True, check=True, background=False):
+    result = False
+
+    try:
+        if background:
+            result = subprocess.Popen(command)
+        else:
+            result = subprocess.run(command, capture_output=capture_output, check=check)
+
+        return(result)
+
+    except Exception as e:
+        print(e)
+        return(result)
+
+def DisplayLinkDetect():
+    for usbDevice in glob.glob('/sys/bus/usb/devices/*'):
+        if os.path.isfile(usbDevice + '/manufacturer'):
+            with open(usbDevice + '/manufacturer', 'r') as f:
+                if f.read().strip() == 'DisplayLink':
+                    print('DisplayLink device detected.')
+                    return(True)
+
+    return(False)
+
+def prep_DisplayLink():
+    if DisplayLinkDetect():
+        if os.path.isdir('/sys/module/evdi'):
+            print('evdi driver already loaded.')
+            displayLinkReady = True
+        else:
+            if runCmd(['modprobe','evdi']):
+                print('evdi loaded.')
+    else:
+      print('Couldn\'t load driver "evdi" for the attached DisplayLink device')
+
+    # Check the DisplayLink device's provider number and set its output source
+    result = runCmd(['xrandr', '--listproviders'])
+    for provider in result.stdout.decode('utf-8').split('\n'):
+        if 'modesetting' in provider:
+            print(provider)
+            providerIndex = provider.split()[1] # Second number is key
+            # Debug # print("Found modesetting provider: %s [%s]" % (providerIndex, provider))
+
+            cmd = ['xrandr', '--setprovideroutputsource', str(providerIndex), '0']
+            print('Running for DisplayLink device: %s' % cmd)
+            runCmd(cmd)
+
+def getConnectedDisplays():
+    connectedDisplays = []
+    result = runCmd(['xrandr'])
+    if result:
+        for search in re.finditer('.* connected.*', result.stdout.decode('utf-8')):
+            connectedDisplays.append(search.group())
+
+    return connectedDisplays
+#
+def getDisplays():
+    active   = []
+    inactive = []
+    connectedDisplays = getConnectedDisplays()
+    for display in connectedDisplays:
+        if '+' in display:
+          active.append(display)
+        else:
+          inactive.append(display)
+
+    return active, inactive
+
+def prep_displays(config):
+    "Activate all displays at our configured resolution."
+
+    prep_DisplayLink()
+
+    # Get all displays including inactive (For DisplayLinks)
+    active, inactive = getDisplays()
+    displays = active + inactive
+
+    # Add resX to this while looping over each display to align them left to right incrementally
+    previousDisplay = None
+
+    for display in displays:
+      displayInterface = display.split()[0]
+      resX, resY = config['settings']['resX'], config['settings']['resY']
+      cmd = ['xrandr', '--output', displayInterface, '--mode', '%sx%s' % (resX, resY) ]
+      if previousDisplay:
+        cmd.append('--right-of')
+        cmd.append(previousDisplay)
+
+      print('running %s' % cmd)
+      runCmd(cmd)
+      previousDisplay = displayInterface
+
+def prep_xset():
+    if runCmd(['xset', 's', 'noblank']):
+        print('xset: screensaver screen blanking disabled.')
+
+    if runCmd(['xset', 's', 'off']):
+        print('xset: screensaver disabled.')
+        print('DPMS disabled')
+
+    if runCmd(['xset', '-dpms']):
+        print('xset: DPMS disabled (Display Power Management Signaling)')
+
+def prep_unclutter():
+    unclutter = runCmd(['pkill', '-f', '-9', 'unclutter'], background=True)
+
+    if runCmd(['unclutter', '-idle', '0.5', '-root']):
+        print('unclutter started.')
+
+
+def prep(config):
+    prep_displays(config)
+
+    prep_xset()
+    prep_unclutter()
 
 def wait_page_load(driver, timeout=30):
     WebDriverWait(driver, timeout).until(
@@ -207,6 +325,9 @@ def main():
     except FileNotFoundError:
         print('Please copy %s.sample to %s to get started.' % (configFile, configFile))
         exit(1)
+
+    # Prepare to run by weaking display settings and preparing our displays
+    prep(config)
 
     # Track our threads
     threads = []
