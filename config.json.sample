@@ -2,7 +2,9 @@
   "settings": {
     "refreshInterval": 300,
     "shouldRefresh": false,
-    "tabbingInterval": 15
+    "tabbingInterval": 15,
+    "resX": 1920,
+    "resY": 1080
   },
   "credentials": {
     "globalUsername": "GlobalDefaultusername",
@@ -18,10 +20,13 @@
       "method": "generic"
     },
     ".*login.*": {
-      "method": "generic"
-    },
-  "displays": {
-    "0": {
+      "method": "generic",
+      "username": "myLogin",
+      "passwordBase64": "base64OfMyPassword"
+    }
+  },
+  "displays": [
+    {
       "username": "Display01Username",
       "totp": "optional base32 totp string",
       "urls": [
@@ -29,18 +34,18 @@
         "https://aSite.com/logins/willBe/handled/onThe/First/page"
       ]
     },
-    "1": {
+    {
       "username": "Display02Username",
       "urls": [
         "https://someothersite.com/page"
       ]
     },
-    "2": {
+    {
       "username": "Display03Username",
       "urls": [
         "https://somesite.com/page",
         "https://somesite.com/page2"
       ]
     }
-  }
+  ]
 }
