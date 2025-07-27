@@ -1,10 +1,10 @@
 #!/bin/bash
 # A short script for automatically restarting the display-manager if the script detects something has gone wrong.
+# Intended to be started automatically with the display environment.
 
 _scriptPath=$(realpath $0)
 _scriptRoot="$(dirname $(realpath $0))"
 _scriptName="$(basename ${_scriptRoot})"
-
 [ $UID -ne 0 ] && SUDO=sudo # Use sudo if not root
 
 cd ${_scriptRoot} || exit 1
@@ -13,9 +13,5 @@ cd ${_scriptRoot} || exit 1
 . .venv/bin/activate
 pip3 install -r requirements.txt
 
-while :
-do
-  python ./main --exit-on-failure ${@}
-  sleep 1
-  $SUDO systemctl restart display-manager
-done
+python ./main --exit-on-failure ${@}
+$SUDO systemctl restart display-manager
