@@ -6,7 +6,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from time import sleep
+import argparse
 import base64
+import datetime
 import glob
 import json
 import os
@@ -19,7 +21,6 @@ _scriptRoot = os.path.dirname(os.path.realpath(__file__))
 _scriptName = _scriptRoot.split('/')[-1]
 _namespace  = _scriptName
 _configFile  = "%s/config.json" % _scriptRoot
-_logFile    = "%s/%s.log" % (_scriptRoot, _scriptName)
 
 #  _____                 _   _
 # |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
@@ -47,7 +48,7 @@ class Logger:
             f.write(content + '\n')
 
 
-def runCmd(command, capture_output=True, check=True, background=False):
+def runCmd(command, logger, capture_output=True, check=True, background=False):
     result = False
 
     try:
@@ -59,40 +60,39 @@ def runCmd(command, capture_output=True, check=True, background=False):
         return(result)
 
     except Exception as e:
-        print(e)
+        logger.log(e)
         return(result)
 
-def DisplayLinkDetect():
+def DisplayLinkDetect(logger):
     for usbDevice in glob.glob('/sys/bus/usb/devices/*'):
         if os.path.isfile(usbDevice + '/manufacturer'):
             with open(usbDevice + '/manufacturer', 'r') as f:
                 if f.read().strip() == 'DisplayLink':
-                    print('DisplayLink device detected.')
+                    logger.log('DisplayLink device detected.')
                     return(True)
 
     return(False)
 
-def prep_DisplayLink():
+def prep_DisplayLink(logger):
     if DisplayLinkDetect():
         if os.path.isdir('/sys/module/evdi'):
-            print('evdi driver already loaded.')
+            logger.log('evdi driver already loaded.')
             displayLinkReady = True
         else:
             if runCmd(['modprobe','evdi']):
-                print('evdi loaded.')
+                logger.log('evdi loaded.')
     else:
-      print('Couldn\'t load driver "evdi" for the attached DisplayLink device')
+      logger.log('Couldn\'t load driver "evdi" for the attached DisplayLink device')
 
     # Check the DisplayLink device's provider number and set its output source
     result = runCmd(['xrandr', '--listproviders'])
     for provider in result.stdout.decode('utf-8').split('\n'):
         if 'modesetting' in provider:
-            print(provider)
             providerIndex = provider.split()[1] # Second number is key
-            # Debug # print("Found modesetting provider: %s [%s]" % (providerIndex, provider))
+            logger.log("Found modesetting provider: %s [%s]" % (providerIndex, provider))
 
             cmd = ['xrandr', '--setprovideroutputsource', str(providerIndex), '0']
-            print('Running for DisplayLink device: %s' % cmd)
+            logger.log('Running for DisplayLink device: %s' % cmd)
             runCmd(cmd)
 
 def getConnectedDisplays():
@@ -116,10 +116,10 @@ def getDisplays():
 
     return active, inactive
 
-def prep_displays(config):
+def prep_displays(config, logger):
     "Activate all displays at our configured resolution."
 
-    prep_DisplayLink()
+    prep_DisplayLink(logger)
 
     # Get all displays including inactive (For DisplayLinks)
     active, inactive = getDisplays()
@@ -136,33 +136,35 @@ def prep_displays(config):
         cmd.append('--right-of')
         cmd.append(previousDisplay)
 
-      print('running %s' % cmd)
+      logger.log('running %s' % cmd)
       runCmd(cmd)
       previousDisplay = displayInterface
 
-def prep_xset():
+def prep_xset(logger):
     if runCmd(['xset', 's', 'noblank']):
-        print('xset: screensaver screen blanking disabled.')
+        logger.log('xset: screensaver screen blanking disabled.')
 
     if runCmd(['xset', 's', 'off']):
-        print('xset: screensaver disabled.')
-        print('DPMS disabled')
+        logger.log('xset: screensaver disabled.')
+        logger.log('DPMS disabled')
 
     if runCmd(['xset', '-dpms']):
-        print('xset: DPMS disabled (Display Power Management Signaling)')
+        logger.log('xset: DPMS disabled (Display Power Management Signaling)')
 
-def prep_unclutter():
+def prep_unclutter(logger):
     unclutter = runCmd(['pkill', '-f', '-9', 'unclutter'], background=True)
 
     if runCmd(['unclutter', '-idle', '0.5', '-root']):
-        print('unclutter started.')
+        logger.log('unclutter started.')
 
 
-def prep(config):
-    prep_displays(config)
-
-    prep_xset()
-    prep_unclutter()
+def prep(args, config, logger):
+    if not args.dry:
+        prep_displays(config)
+        prep_xset()
+        prep_unclutter()
+    else:
+        logger.log('Running in --dry mode. Skipping prep.')
 
 def wait_page_load(driver, timeout=30):
     WebDriverWait(driver, timeout).until(
@@ -198,7 +200,7 @@ def input_field(driver, field, data, wait):
     field_input.clear()
     field_input.send_keys(data)
 
-def get_credentials(config, display_id, page_title):
+def get_credentials(config, display_id, page_title, logger):
     "Check auth_pages, then the display's own credentials and finally the global credentials for a username and password"
 
     username = password = None
@@ -206,7 +208,6 @@ def get_credentials(config, display_id, page_title):
     # Search the auth_pages configurable for a matching set of credentials for this particular page.
     for regex_title in config['auth_pages']:
         if re.search(regex_title, page_title):
-            #print('MATCH')
             username = config['auth_pages'][regex_title]['username']
             password = base64.b64decode(config['auth_pages'][regex_title]['passwordBase64']).decode('utf-8')
             break
@@ -222,7 +223,7 @@ def get_credentials(config, display_id, page_title):
                 if globalUsername in config['credentials']:
                     username = config['credentials']['username']
                 else:
-                    print('No usernames set anywhere. Giving up.')
+                    logger.log('No usernames set anywhere. Giving up.')
                     return(False)
 
     if not password:
@@ -234,17 +235,17 @@ def get_credentials(config, display_id, page_title):
                 if 'globalPasswordBase64' in config['credentials']:
                     password = base64.b64decode(config['credentials']['globalPasswordBase64']).decode('utf-8')
                 else:
-                    print('No passwords set anywhere. Giving up.')
+                    logger.log('No passwords set anywhere. Giving up.')
                     return(False)
 
 
     return username, password
 
-def handle_login(driver, config, display_id):
-    print('Logging in...')
+def handle_login(args, driver, config, display_id, logger):
+    logger.log('Logging into: %s ...' % driver.current_url)
 
     # Determine credentials
-    username, password = get_credentials(config, display_id, driver.title)
+    username, password = get_credentials(config, display_id, driver.title, logger)
 
     # Fill in some fields and submit
     try:
@@ -269,22 +270,30 @@ def handle_login(driver, config, display_id):
                 submit_button = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
                 submit_button.click()
                 wait_page_load(driver)
+
+                sleep(3) # Another hard coded wait
+                if is_login_page(driver):
+                    raise Exception("Still on login page after TOTP!")
             else:
-                raise Exception("Still on login page after login attempt and no TOTP information stored!")
+                raise Exception("Still on login page after login attempt without expectation of TOTP!")
 
     except Exception as e:
-        print("Something went wrong: %s" % e)
+        logger.log("Something went wrong logging in: %s" % e)
+        if args.exit_on_failure:
+            exit(2)
 
 
 
-def handle_page(driver, config, display_id):
-    #page_title = driver.title
-
+def handle_page(args, driver, config, display_id, logger):
     if is_login_page(driver):
-        handle_login(driver, config, display_id)
-        print('c')
+        try:
+            handle_login(args, driver, config, display_id, logger)
+        except Exception as e:
+            print('Login failed: %s' % e)
+            if args.exit_on_failure:
+                exit(2)
 
-def start_session(config, monitor, display_id, x=None, y=None):
+def start_session(args, config, monitor, display_id, logger, killSignal):
     urls = config['displays'][display_id]['urls']
 
     chrome_options = Options()
@@ -310,7 +319,7 @@ def start_session(config, monitor, display_id, x=None, y=None):
     # Open the primary url (First), handle any authentication.
     driver.get(primary_url)
     wait_page_load(driver)
-    handle_page(driver, config, display_id)
+    handle_page(args, driver, config, display_id, logger)
     sleep(1) # Graceful sleep. Might not be enough on slower hosts
 
     # Open the rest of the urls as tabs
@@ -318,17 +327,24 @@ def start_session(config, monitor, display_id, x=None, y=None):
         driver.execute_script("window.open('%s');" % url)
 
     # Cycle through tabs until we die
-    print('Thread %s cycling all tabs...' % display_id)
-    while True:
-        for handle in driver.window_handles:
-            driver.switch_to.window(handle)
-            if config['settings']['shouldRefresh']:
-                driver.refresh()
-                wait_page_load(driver)
+    logger.log('Thread %s cycling all tabs...' % display_id)
 
-            handle_page(driver, config, display_id)
+    try:
+       while not killSignal.is_set():
+                for handle in driver.window_handles:
+                    driver.switch_to.window(handle)
+                    if config['settings']['shouldRefresh']:
+                        river.refresh()
+                        wait_page_load(driver)
 
-            sleep(config['settings']['tabbingInterval'])
+                    handle_page(args, driver, config, display_id, logger)
+
+                    sleep(config['settings']['tabbingInterval'])
+
+    except Exception as e:
+        logger.log('Thread error: %s' % e)
+        if args.exit_on_failure:
+            exit(2)
 
 
 #  __  __       _
@@ -339,15 +355,73 @@ def start_session(config, monitor, display_id, x=None, y=None):
 #
 
 def main():
+
+    parser = argparse.ArgumentParser(description='A script for automagically displaying websites on a display and cycling through them per display. With auto-login support.')
+
+    parser.add_argument(
+            '--debug',
+            action='store_true',
+            default=False,
+            help='Enable debug logging'
+            )
+
+    parser.add_argument(
+            '--dry',
+            action='store_true',
+            default=False,
+            help='Run in dry mode. No resolution change or background processes, just the browsers'
+            )
+
+    parser.add_argument(
+            '--exit-on-failure',
+            action='store_true',
+            default=False,
+            help='Exit on failure. For ./runner'
+            )
+
+
+    parser.add_argument(
+            '--log-file',
+            default="%s/%s.log" % (_scriptRoot, _scriptName),
+            help='Specify an alternative log file path.'
+            )
+
+    parser.add_argument(
+            '--date-format',
+            default='%Y-%m-%d %H:%M:%S',
+            help='Specify a custom datetime format string.'
+            )
+
+    parser.add_argument(
+            '--silent',
+            action='store_true',
+            default=False,
+            help='When set write nothing to output, only log to file.'
+            )
+
+
+    args = parser.parse_args()
+
+    # Skip dating if we're not setting a dateformat
+    logger = Logger(logFile=args.log_file,
+                    dateFormat=args.date_format,
+                    dated=bool(args.date_format),
+                    silent=args.silent)
+
+    logger.log('[Starting...]')
+
     try:
        with open(_configFile, 'r') as file:
            config = json.loads(file.read())
     except FileNotFoundError:
-        print('Please copy %s.sample to %s to get started.' % (_configFile, _configFile))
-        exit(1)
+        logger.log('Please copy %s.sample to %s to get started.' % (_configFile, _configFile))
+        if args.exit_on_failure:
+            exit(2)
+
+    killSignal = threading.Event()
 
     # Prepare to run by weaking display settings and preparing our displays
-    prep(config)
+    prep(args, config, logger)
 
     # Track our threads
     threads = []
@@ -359,16 +433,30 @@ def main():
     for displayIndex in range(0, len(monitors)):
         monitor = monitors[displayIndex]
 
-        #start_session(config, monitor, display_id=displayIndex)
+        thread = threading.Thread(target=start_session, args=(args, config, monitor, displayIndex, logger, killSignal))
 
-        thread = threading.Thread(target=start_session, args=(config, monitor, displayIndex))
-        thread.start()
+        try:
+            thread.start()
+        except (KeyboardInterrupt, SystemExit):
+            cleanup_stop_thread()
+            sys.exit()
+
         threads.append(thread)
 
     # Wait for them to finish
-    print('Waiting for threads to exit...')
-    for thread in threads:
-        thread.join()
+    logger.log('Watching threads')
+
+    while True:
+        sleep(5)
+
+        for thread in threads:
+            if not thread.is_alive():
+                logger.log('A thread has died.')
+                if args.exit_on_failure:
+                    logger.log('Attempting to exit...')
+                    killSignal.set()
+                    exit(2)
+
 
 
 if __name__ == "__main__":
