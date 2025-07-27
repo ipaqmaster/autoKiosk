@@ -74,18 +74,18 @@ def DisplayLinkDetect(logger):
     return(False)
 
 def prep_DisplayLink(logger):
-    if DisplayLinkDetect():
+    if DisplayLinkDetect(logger):
         if os.path.isdir('/sys/module/evdi'):
             logger.log('evdi driver already loaded.')
             displayLinkReady = True
         else:
-            if runCmd(['modprobe','evdi']):
+            if runCmd(['modprobe','evdi'], logger):
                 logger.log('evdi loaded.')
     else:
       logger.log('Couldn\'t load driver "evdi" for the attached DisplayLink device')
 
     # Check the DisplayLink device's provider number and set its output source
-    result = runCmd(['xrandr', '--listproviders'])
+    result = runCmd(['xrandr', '--listproviders'], logger)
     for provider in result.stdout.decode('utf-8').split('\n'):
         if 'modesetting' in provider:
             providerIndex = provider.split()[1] # Second number is key
@@ -93,21 +93,21 @@ def prep_DisplayLink(logger):
 
             cmd = ['xrandr', '--setprovideroutputsource', str(providerIndex), '0']
             logger.log('Running for DisplayLink device: %s' % cmd)
-            runCmd(cmd)
+            runCmd(cmd, logger)
 
-def getConnectedDisplays():
+def getConnectedDisplays(logger):
     connectedDisplays = []
-    result = runCmd(['xrandr'])
+    result = runCmd(['xrandr'], logger)
     if result:
         for search in re.finditer('.* connected.*', result.stdout.decode('utf-8')):
             connectedDisplays.append(search.group())
 
     return connectedDisplays
 #
-def getDisplays():
+def getDisplays(logger):
     active   = []
     inactive = []
-    connectedDisplays = getConnectedDisplays()
+    connectedDisplays = getConnectedDisplays(logger)
     for display in connectedDisplays:
         if '+' in display:
           active.append(display)
@@ -122,7 +122,7 @@ def prep_displays(config, logger):
     prep_DisplayLink(logger)
 
     # Get all displays including inactive (For DisplayLinks)
-    active, inactive = getDisplays()
+    active, inactive = getDisplays(logger)
     displays = active + inactive
 
     # Add resX to this while looping over each display to align them left to right incrementally
@@ -137,32 +137,32 @@ def prep_displays(config, logger):
         cmd.append(previousDisplay)
 
       logger.log('running %s' % cmd)
-      runCmd(cmd)
+      runCmd(cmd, logger)
       previousDisplay = displayInterface
 
 def prep_xset(logger):
-    if runCmd(['xset', 's', 'noblank']):
+    if runCmd(['xset', 's', 'noblank'], logger):
         logger.log('xset: screensaver screen blanking disabled.')
 
-    if runCmd(['xset', 's', 'off']):
+    if runCmd(['xset', 's', 'off'], logger):
         logger.log('xset: screensaver disabled.')
         logger.log('DPMS disabled')
 
-    if runCmd(['xset', '-dpms']):
+    if runCmd(['xset', '-dpms'], logger):
         logger.log('xset: DPMS disabled (Display Power Management Signaling)')
 
 def prep_unclutter(logger):
-    unclutter = runCmd(['pkill', '-f', '-9', 'unclutter'], background=True)
+    unclutter = runCmd(['pkill', '-f', '-9', 'unclutter'],logger, background=True)
 
-    if runCmd(['unclutter', '-idle', '0.5', '-root']):
+    if runCmd(['unclutter', '-idle', '0.5', '-root'], logger):
         logger.log('unclutter started.')
 
 
 def prep(args, config, logger):
     if not args.dry:
-        prep_displays(config)
-        prep_xset()
-        prep_unclutter()
+        prep_displays(config, logger)
+        prep_xset(logger)
+        prep_unclutter(logger)
     else:
         logger.log('Running in --dry mode. Skipping prep.')
 
