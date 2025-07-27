@@ -18,7 +18,8 @@ import threading
 _scriptRoot = os.path.dirname(os.path.realpath(__file__))
 _scriptName = _scriptRoot.split('/')[-1]
 _namespace  = _scriptName
-configFile  = "%s/config.json" % _scriptRoot
+_configFile  = "%s/config.json" % _scriptRoot
+_logFile    = "%s/%s.log" % (_scriptRoot, _scriptName)
 
 #  _____                 _   _
 # |  ___|   _ _ __   ___| |_(_) ___  _ __  ___
@@ -26,6 +27,25 @@ configFile  = "%s/config.json" % _scriptRoot
 # |  _|| |_| | | | | (__| |_| | (_) | | | \__ \
 # |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/
 #
+
+class Logger:
+    def __init__(self, logFile, dateFormat, dated=True, silent=False):
+        self.logFile    = logFile
+        self.dateFormat = dateFormat
+        self.dated      = dated
+        self.silent     = silent
+
+    def log(self, content):
+
+        if self.dated:
+            content = "[%s] %s" % (datetime.datetime.now().strftime(self.dateFormat), content)
+
+        if not self.silent:
+            print(content)
+
+        with open(self.logFile, 'a') as f:
+            f.write(content + '\n')
+
 
 def runCmd(command, capture_output=True, check=True, background=False):
     result = False
@@ -320,10 +340,10 @@ def start_session(config, monitor, display_id, x=None, y=None):
 
 def main():
     try:
-       with open(configFile, 'r') as file:
+       with open(_configFile, 'r') as file:
            config = json.loads(file.read())
     except FileNotFoundError:
-        print('Please copy %s.sample to %s to get started.' % (configFile, configFile))
+        print('Please copy %s.sample to %s to get started.' % (_configFile, _configFile))
         exit(1)
 
     # Prepare to run by weaking display settings and preparing our displays
