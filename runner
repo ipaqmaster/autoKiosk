@@ -15,7 +15,7 @@ pip3 install -r requirements.txt
 
 while :
 do
-  python ./main --dry
+  python ./main --exit-on-failure ${@}
   sleep 1
   $SUDO systemctl restart display-manager
 done
