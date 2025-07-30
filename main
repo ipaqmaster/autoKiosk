@@ -47,8 +47,7 @@ class Logger:
         with open(self.logFile, 'a') as f:
             f.write(content + '\n')
 
-
-def runCmd(command, logger, capture_output=True, check=True, background=False):
+def runCmd(command, logger, capture_output=True, check=True, background=False, ignoreError=False):
     result = False
 
     try:
@@ -60,7 +59,9 @@ def runCmd(command, logger, capture_output=True, check=True, background=False):
         return(result)
 
     except Exception as e:
-        logger.log(e)
+        if not ignoreError:
+            logger.log("runCmd failed: %s" % e)
+
         return(result)
 
 def DisplayLinkDetect(logger):
