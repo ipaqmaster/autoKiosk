@@ -147,17 +147,19 @@ def prep_xset(logger):
 
     if runCmd(['xset', 's', 'off'], logger):
         logger.log('xset: screensaver disabled.')
-        logger.log('DPMS disabled')
 
     if runCmd(['xset', '-dpms'], logger):
         logger.log('xset: DPMS disabled (Display Power Management Signaling)')
 
 def prep_unclutter(logger):
-    unclutter = runCmd(['pkill', '-f', '-9', 'unclutter'],logger, background=True)
+    unclutter_running_status = runCmd(['pgrep', 'unclutter'], logger, ignoreError=True)
 
-    if runCmd(['unclutter', '-idle', '0.5', '-root'], logger):
-        logger.log('unclutter started.')
+    if unclutter_running_status:
+        logger.log('unclutter already running...')
+    else:
+        logger.log('Starting unclutter...')
 
+        runCmd(['unclutter', '--idle', '0.5', '--fork'], logger, background=True)
 
 def prep(args, config, logger):
     if not args.dry:
