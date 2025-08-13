@@ -333,8 +333,11 @@ def start_session(args, config, monitor, display_id, logger, killSignal):
     logger.log('Thread %s cycling all tabs...' % display_id)
 
     try:
-       while not killSignal.is_set():
+        while True:
                 for handle in driver.window_handles:
+                    if killSignal.is_set():
+                        return(True)
+
                     driver.switch_to.window(handle)
                     if config['settings']['shouldRefresh']:
                         river.refresh()
@@ -349,6 +352,22 @@ def start_session(args, config, monitor, display_id, logger, killSignal):
         if args.exit_on_failure:
             exit(2)
 
+def monitor_display_count(logger, killSignal):
+    initial_monitor_count = len(get_monitors())
+    current_monitor_count = initial_monitor_count
+
+    logger.log('Monitoring display count [%s]' % initial_monitor_count)
+
+    while True:
+        if killSignal.is_set():
+            return(True)
+
+        current_monitor_count = len(get_monitors())
+        if current_monitor_count != initial_monitor_count:
+            logger.log('Display count has changed. Was %s, now %s' % (initial_monitor_count, current_monitor_count))
+            return(False)
+
+        sleep(1)
 
 #  __  __       _
 # |  \/  | __ _(_)_ __
@@ -445,6 +464,11 @@ def main():
             sys.exit()
 
         threads.append(thread)
+
+    # Start a display count monitoring thread so we can exit if the display count changes.
+    thread = threading.Thread(target=monitor_display_count, args=(logger, killSignal,))
+    thread.start()
+    threads.append(thread)
 
     # Wait for them to finish
     logger.log('Watching threads')
