@@ -292,7 +292,7 @@ def handle_page(args, driver, config, display_id, logger):
         try:
             handle_login(args, driver, config, display_id, logger)
         except Exception as e:
-            print('Login failed: %s' % e)
+            logger.log('Login failed: %s' % e)
             if args.exit_on_failure:
                 exit(2)
 
