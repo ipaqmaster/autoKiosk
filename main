@@ -301,6 +301,9 @@ def start_session(args, config, monitor, display_id, logger, killSignal):
 
     chrome_options = Options()
 
+    # Use a persistently named data dir for this selenium instance.
+    chrome_options.add_argument("--user-data-dir=%s/selenium_%s" % (config['settings']['seleniumProfileBasedir'], display_id))
+
     # Use kiosk mode
     chrome_options.add_argument("--kiosk")
 
@@ -450,6 +453,10 @@ def main():
 
     # Get a monitor count
     monitors = get_monitors()
+
+    # Create the specified seleniumProfileBasedir for the selenium instances to store profiles under
+    if not os.path.isdir(config['settings']['seleniumProfileBasedir']):
+        os.makedirs(config['settings']['seleniumProfileBasedir'], exist_ok=True)
 
     # Iterate over monitors and those configured
     for displayIndex in range(0, len(monitors)):

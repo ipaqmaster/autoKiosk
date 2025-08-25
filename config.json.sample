@@ -4,7 +4,8 @@
     "shouldRefresh": false,
     "tabbingInterval": 15,
     "resX": 1920,
-    "resY": 1080
+    "resY": 1080,
+    "seleniumProfileBasedir": "profiles/"
   },
   "credentials": {
     "globalUsername": "GlobalDefaultusername",
